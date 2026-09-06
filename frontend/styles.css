@@ -1,0 +1,226 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1420;
+  --panel: #161d2e;
+  --panel-2: #1d2740;
+  --border: #2a3454;
+  --text: #e7ebf5;
+  --muted: #93a0c0;
+  --accent: #4fd1a5;
+  --accent-2: #6ea8fe;
+  --loss: #ff6b6b;
+  --debit: #f5b942;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  padding-bottom: 4rem;
+}
+
+header {
+  padding: 1.5rem 2rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+
+header p.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.disclaimer {
+  margin: 1rem 2rem 0;
+  padding: 0.75rem 1rem;
+  background: #2a2210;
+  border: 1px solid #5c4a12;
+  color: #ecd07a;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.field input, .field select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  min-width: 8rem;
+}
+
+.field.tickers input { min-width: 16rem; }
+
+button.primary {
+  background: var(--accent);
+  color: #06231a;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+button.primary:hover { opacity: 0.9; }
+button.primary:disabled { opacity: 0.5; cursor: default; }
+
+#status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 1.5rem;
+  min-height: 1.2em;
+}
+
+.ticker-block {
+  margin-bottom: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.ticker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.9rem 1.2rem;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.ticker-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.ticker-header .price { color: var(--accent-2); font-weight: 600; }
+.ticker-header .meta { color: var(--muted); font-size: 0.8rem; }
+
+.error-msg {
+  padding: 1rem 1.2rem;
+  color: var(--loss);
+}
+
+.idea-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+  padding: 1.2rem;
+}
+
+.idea-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.idea-card .strategy-name {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.15rem;
+}
+
+.idea-card .attribution {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-bottom: 0.6rem;
+}
+
+.idea-card .rationale {
+  font-size: 0.85rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.4;
+}
+
+.legs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-bottom: 0.7rem;
+}
+
+.legs-table th, .legs-table td {
+  text-align: left;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.legs-table .action-buy { color: var(--accent-2); }
+.legs-table .action-sell { color: var(--accent); }
+
+.stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  font-size: 0.8rem;
+}
+
+.stat-row .stat { display: flex; flex-direction: column; }
+.stat-row .stat .label { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.stat-row .stat .value { font-weight: 600; }
+.stat-row .value.positive { color: var(--accent); }
+.stat-row .value.negative { color: var(--loss); }
+
+table.contracts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+table.contracts-table th, table.contracts-table td {
+  padding: 0.5rem 0.8rem;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+table.contracts-table th:first-child, table.contracts-table td:first-child { text-align: left; }
+
+table.contracts-table tbody tr:hover { background: var(--panel-2); }
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.badge.call { background: #123a2c; color: var(--accent); }
+.badge.put { background: #3a1620; color: var(--loss); }

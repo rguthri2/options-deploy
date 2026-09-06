@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Options Strategy Screener</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Options Strategy Screener</h1>
+    <p class="subtitle">Screen liquid, directional option contracts and surface ideas modeled on well-known options-trading strategies.</p>
+  </header>
+
+  <div class="disclaimer">
+    <strong>Not financial advice.</strong> This tool is for research/education only. It does not place trades,
+    connect to a brokerage, or guarantee the accuracy of any data, greek, or payoff estimate. Always verify
+    quotes and greeks with your broker before trading, and consider consulting a licensed financial advisor.
+  </div>
+
+  <main>
+    <div class="controls">
+      <div class="field tickers">
+        <label for="tickers">Tickers (comma-separated)</label>
+        <input id="tickers" type="text" value="AAPL,MSFT,NVDA,TSLA,SPY" />
+      </div>
+      <div class="field">
+        <label for="strategy">Strategy</label>
+        <select id="strategy">
+          <option value="all">All strategies</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="minOi">Min open interest</label>
+        <input id="minOi" type="number" min="0" value="100" />
+      </div>
+      <div class="field">
+        <label for="minDelta">Min |delta|</label>
+        <input id="minDelta" type="number" min="0" max="1" step="0.05" value="0.4" />
+      </div>
+      <div class="field">
+        <label for="minDte">Min days to expiration</label>
+        <input id="minDte" type="number" min="0" value="14" />
+      </div>
+      <button class="primary" id="scanBtn">Scan</button>
+    </div>
+
+    <div id="status"></div>
+    <div id="results"></div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

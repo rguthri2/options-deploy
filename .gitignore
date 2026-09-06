@@ -1,3 +1,10 @@
+### Python ###
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
 ### AL ###
 #Template for AL projects for Dynamics 365 Business Central
 #launch.json folder
