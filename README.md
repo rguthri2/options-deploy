@@ -101,6 +101,25 @@ DATA_PROVIDER=yfinance uvicorn app.main:app --reload
 Other tunables (env vars, or per-request query params on `/api/screen` and
 `/api/scan`): `MIN_OPEN_INTEREST`, `MIN_ABS_DELTA`, `MIN_DAYS_TO_EXPIRATION`.
 
+## Testing the yfinance provider against live data
+
+The `MockProvider` is what this repo's automated tests and the sandboxed
+session it was built in exercise (Yahoo Finance is unreachable from that
+sandbox's network policy). To verify the live path on a machine with normal
+internet access:
+
+```bash
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python3 scripts/test_yfinance_live.py            # defaults to AAPL,MSFT,NVDA,TSLA,SPY
+python3 scripts/test_yfinance_live.py AAPL GOOGL # or pass your own tickers
+```
+
+It fetches real quotes and option chains, runs them through the screener, and
+exercises the full `/api/scan` HTTP path with `DATA_PROVIDER=yfinance`,
+printing sample screened contracts and any errors. Exits non-zero on failure.
+
 ## Tests
 
 ```bash
