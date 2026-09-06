@@ -32,10 +32,18 @@ const els = {
   confirmModalInput: document.getElementById("confirmModalInput"),
   confirmModalOk: document.getElementById("confirmModalOk"),
   confirmModalCancel: document.getElementById("confirmModalCancel"),
+
+  etradeConnectBtn: document.getElementById("etradeConnectBtn"),
+  etradeVerifierRow: document.getElementById("etradeVerifierRow"),
+  etradeVerifierInput: document.getElementById("etradeVerifierInput"),
+  etradeCompleteBtn: document.getElementById("etradeCompleteBtn"),
+  etradeStatus: document.getElementById("etradeStatus"),
 };
 
 const state = {
   isLive: false,
+  etradeRequestToken: null,
+  etradeRequestTokenSecret: null,
 };
 
 // Populated fresh on every render; trade buttons reference an idea/leg
@@ -233,6 +241,59 @@ els.ordersTable.addEventListener("click", async (e) => {
   const { ok, data } = await apiPostJSON(`/orders/${orderId}/cancel`);
   els.status.textContent = ok ? `Order ${orderId} canceled.` : data.detail || "Cancel failed.";
   loadOrders();
+});
+
+// --- E*TRADE OAuth connection -------------------------------------------------
+
+els.etradeConnectBtn.addEventListener("click", async () => {
+  els.etradeStatus.textContent = "Requesting authorization URL...";
+  els.etradeConnectBtn.disabled = true;
+  try {
+    const data = await apiGetJSON("/broker/etrade/auth-url");
+    state.etradeRequestToken = data.request_token;
+    state.etradeRequestTokenSecret = data.request_token_secret;
+    window.open(data.authorize_url, "_blank", "noopener");
+    els.etradeVerifierRow.hidden = false;
+    els.etradeVerifierInput.focus();
+    els.etradeStatus.textContent =
+      "A new tab opened for E*TRADE login. After you authorize, E*TRADE shows a verifier code -- paste it below and click Complete Connection.";
+  } catch (err) {
+    els.etradeStatus.textContent = err.message;
+  } finally {
+    els.etradeConnectBtn.disabled = false;
+  }
+});
+
+els.etradeCompleteBtn.addEventListener("click", async () => {
+  const verifier = els.etradeVerifierInput.value.trim();
+  if (!verifier) {
+    els.etradeStatus.textContent = "Enter the verifier code E*TRADE showed you first.";
+    return;
+  }
+  if (!state.etradeRequestToken || !state.etradeRequestTokenSecret) {
+    els.etradeStatus.textContent = "Click Connect E*TRADE again first -- the request token expired or was never fetched.";
+    return;
+  }
+  els.etradeCompleteBtn.disabled = true;
+  els.etradeStatus.textContent = "Completing connection...";
+  try {
+    const { ok, data } = await apiPostJSON("/broker/etrade/complete-auth", {
+      request_token: state.etradeRequestToken,
+      request_token_secret: state.etradeRequestTokenSecret,
+      verifier,
+    });
+    if (!ok) {
+      els.etradeStatus.textContent = data.detail || "Failed to complete E*TRADE connection.";
+      return;
+    }
+    els.etradeStatus.textContent = "E*TRADE connected. Real order placement still requires ACTIVE_BROKER=etrade and LIVE_TRADING_ENABLED=true on the server.";
+    els.etradeVerifierRow.hidden = true;
+    els.etradeVerifierInput.value = "";
+  } catch (err) {
+    els.etradeStatus.textContent = `Error: ${err.message}`;
+  } finally {
+    els.etradeCompleteBtn.disabled = false;
+  }
 });
 
 // --- Placing an order from a strategy leg ------------------------------------

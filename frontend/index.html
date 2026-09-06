@@ -72,6 +72,24 @@
         </div>
       </section>
 
+      <section class="panel" id="etradePanel">
+        <h2>E*TRADE Connection</h2>
+        <p class="etrade-hint">
+          Connect once so real order placement is possible when
+          <code>ACTIVE_BROKER=etrade</code> and <code>LIVE_TRADING_ENABLED=true</code>
+          are set on the server. Connecting alone does not enable live trading --
+          those are separate, server-side-only switches.
+        </p>
+        <div class="etrade-controls">
+          <button id="etradeConnectBtn" class="secondary">Connect E*TRADE</button>
+          <div id="etradeVerifierRow" class="etrade-verifier-row" hidden>
+            <input id="etradeVerifierInput" type="text" placeholder="Verifier code from E*TRADE" autocomplete="off" />
+            <button id="etradeCompleteBtn" class="primary">Complete Connection</button>
+          </div>
+        </div>
+        <div id="etradeStatus" class="etrade-status"></div>
+      </section>
+
       <div class="controls">
         <div class="field tickers">
           <label for="tickers">Tickers (comma-separated)</label>
