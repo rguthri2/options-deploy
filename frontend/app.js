@@ -5,6 +5,7 @@ const els = {
   loginForm: document.getElementById("loginForm"),
   loginUsername: document.getElementById("loginUsername"),
   loginPassword: document.getElementById("loginPassword"),
+  loginPasswordToggle: document.getElementById("loginPasswordToggle"),
   loginError: document.getElementById("loginError"),
   app: document.getElementById("app"),
   liveBanner: document.getElementById("liveBanner"),
@@ -118,6 +119,12 @@ async function checkAuth() {
     return false;
   }
 }
+
+els.loginPasswordToggle.addEventListener("click", () => {
+  const showing = els.loginPassword.type === "text";
+  els.loginPassword.type = showing ? "password" : "text";
+  els.loginPasswordToggle.textContent = showing ? "Show" : "Hide";
+});
 
 els.loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();

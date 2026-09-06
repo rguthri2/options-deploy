@@ -263,6 +263,22 @@ table.contracts-table tbody tr:hover { background: var(--panel-2); }
   font-size: 0.95rem;
 }
 
+.password-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.password-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-toggle {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .login-error {
   background: #3a1620;
   color: var(--loss);

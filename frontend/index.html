@@ -17,7 +17,10 @@
       </div>
       <div class="field">
         <label for="loginPassword">Password</label>
-        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <div class="password-row">
+          <input id="loginPassword" type="password" autocomplete="current-password" required />
+          <button type="button" id="loginPasswordToggle" class="secondary password-toggle">Show</button>
+        </div>
       </div>
       <button class="primary" type="submit">Sign in</button>
     </form>
