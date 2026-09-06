@@ -13,14 +13,15 @@ ExecStart=/home/optionsapp/options-app/backend/.venv/bin/uvicorn app.main:app --
 Restart=always
 RestartSec=3
 
-# Light sandboxing -- harmless for this app (no writes outside the repo,
-# no need for extra privileges) and cheap insurance if a dependency ever
-# tries something it shouldn't.
+# NoNewPrivileges is harmless sandboxing on its own. ProtectHome/ProtectSystem
+# were dropped: ProtectHome=true hides /home from the unit's mount namespace
+# and on at least one real deployment (RHEL/AlmaLinux + this exact layout)
+# that hid the venv itself even with a matching ReadWritePaths=, so systemd
+# couldn't exec .venv/bin/uvicorn at all ("No such file or directory" despite
+# the file existing) -- not worth the sandboxing benefit for an app whose
+# home dir already is its entire working directory.
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
-ProtectHome=true
-ReadWritePaths=/home/optionsapp/options-app
 
 [Install]
 WantedBy=multi-user.target
