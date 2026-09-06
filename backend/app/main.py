@@ -12,6 +12,7 @@ screening tool only. See README.md for the full disclaimer.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +35,7 @@ app.add_middleware(
 )
 
 
-def _criteria_from_query(min_oi: int | None, min_delta: float | None, min_dte: int | None) -> ScreeningCriteria:
+def _criteria_from_query(min_oi: Optional[int], min_delta: Optional[float], min_dte: Optional[int]) -> ScreeningCriteria:
     settings = get_settings()
     return ScreeningCriteria(
         min_open_interest=min_oi if min_oi is not None else settings.min_open_interest,
@@ -64,9 +65,9 @@ def list_strategies() -> dict:
 @app.get("/api/screen")
 def screen(
     ticker: str = Query(..., description="Single ticker symbol, e.g. AAPL"),
-    min_oi: int | None = Query(None, ge=0),
-    min_delta: float | None = Query(None, ge=0, le=1),
-    min_dte: int | None = Query(None, ge=0),
+    min_oi: Optional[int] = Query(None, ge=0),
+    min_delta: Optional[float] = Query(None, ge=0, le=1),
+    min_dte: Optional[int] = Query(None, ge=0),
 ) -> dict:
     provider = get_provider()
     criteria = _criteria_from_query(min_oi, min_delta, min_dte)
@@ -92,9 +93,9 @@ def screen(
 def scan(
     tickers: str = Query(..., description="Comma-separated ticker symbols, e.g. AAPL,MSFT"),
     strategy: str = Query("all", description="Strategy key, or 'all'"),
-    min_oi: int | None = Query(None, ge=0),
-    min_delta: float | None = Query(None, ge=0, le=1),
-    min_dte: int | None = Query(None, ge=0),
+    min_oi: Optional[int] = Query(None, ge=0),
+    min_delta: Optional[float] = Query(None, ge=0, le=1),
+    min_dte: Optional[int] = Query(None, ge=0),
 ) -> dict:
     provider = get_provider()
     criteria = _criteria_from_query(min_oi, min_delta, min_dte)
