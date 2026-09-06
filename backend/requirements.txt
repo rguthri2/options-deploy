@@ -1,3 +1,4 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 yfinance>=0.2.40
+requests-oauthlib>=1.3

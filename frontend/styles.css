@@ -224,3 +224,199 @@ table.contracts-table tbody tr:hover { background: var(--panel-2); }
 
 .badge.call { background: #123a2c; color: var(--accent); }
 .badge.put { background: #3a1620; color: var(--loss); }
+
+/* --- Auth --- */
+
+.login-overlay[hidden] { display: none; }
+
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.login-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.login-card h2 { margin: 0; }
+
+.login-card .field { display: flex; flex-direction: column; gap: 0.3rem; }
+.login-card label { font-size: 0.8rem; color: var(--muted); }
+.login-card input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+.login-error {
+  background: #3a1620;
+  color: var(--loss);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+button.primary.danger { background: var(--loss); color: #2a0a0a; }
+
+/* --- Header / live banner --- */
+
+.live-banner {
+  background: #3a1620;
+  color: var(--loss);
+  text-align: center;
+  font-weight: 700;
+  padding: 0.6rem;
+  letter-spacing: 0.02em;
+  border-bottom: 2px solid var(--loss);
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.badge-broker {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.badge-broker.live {
+  background: #3a1620;
+  color: var(--loss);
+  border-color: var(--loss);
+}
+
+/* --- Account / orders panels --- */
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+@media (max-width: 900px) {
+  .panel-grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.2rem;
+}
+
+.panel h2 { margin: 0 0 0.8rem; font-size: 1rem; }
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-top: 0.6rem;
+}
+
+table.data-table th, table.data-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.empty-row { color: var(--muted); text-align: center; padding: 1rem 0; }
+
+.mini-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--accent-2);
+  border-radius: 5px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.mini-btn:hover { background: var(--border); }
+
+.status-filled { color: var(--accent); }
+.status-rejected { color: var(--loss); }
+.status-canceled { color: var(--muted); }
+.status-pending { color: var(--debit); }
+
+.fill-cell { max-width: 220px; font-size: 0.75rem; color: var(--muted); }
+
+/* --- Confirm-live-order modal --- */
+
+.modal-overlay[hidden] { display: none; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--loss);
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 340px;
+}
+
+.modal-card h3 { margin: 0 0 0.6rem; color: var(--loss); }
+
+.modal-card input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}

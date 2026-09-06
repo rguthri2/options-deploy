@@ -1,31 +1,55 @@
-"""FastAPI app: screens option chains and surfaces strategy ideas.
+"""FastAPI app: screens option chains, surfaces strategy ideas, and places
+paper or (optionally, gated) live orders.
 
 Endpoints:
-  GET /api/health
-  GET /api/strategies
-  GET /api/screen?ticker=AAPL
-  GET /api/scan?tickers=AAPL,MSFT&strategy=all|<strategy_key>
+  GET  /api/health                          (public)
+  POST /api/auth/login, /api/auth/logout    (public)
+  GET  /api/auth/me                         (auth required)
+  GET  /api/strategies                      (auth required)
+  GET  /api/screen?ticker=AAPL              (auth required)
+  GET  /api/scan?tickers=AAPL,MSFT&...      (auth required)
+  GET  /api/broker/status                   (auth required)
+  GET  /api/account, /api/positions         (auth required)
+  GET  /api/orders, POST /api/orders        (auth required)
+  POST /api/orders/{id}/cancel              (auth required)
+  GET  /api/broker/etrade/auth-url          (auth required)
+  POST /api/broker/etrade/complete-auth     (auth required)
 
-This app does not place trades or connect to a broker -- it is a research /
-screening tool only. See README.md for the full disclaimer.
+Trading defaults to a paper (simulated) broker. Real order placement only
+happens if BOTH ACTIVE_BROKER=etrade AND LIVE_TRADING_ENABLED=true are set,
+and even then every order requires an explicit confirm_live=true in the
+request body -- see app/trading/__init__.get_broker() and README.md.
 """
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+from . import db
+from .auth import clear_session_cookie, require_auth, set_session_cookie, verify_password
 from .config import get_settings
 from .models import ScreeningCriteria
 from .providers import ProviderError, get_provider
 from .screener import screen_chain
-from .serializers import contract_to_dict, idea_to_dict, underlying_to_dict
+from .serializers import (
+    account_to_dict,
+    contract_to_dict,
+    idea_to_dict,
+    order_to_dict,
+    position_to_dict,
+    underlying_to_dict,
+)
 from .strategies import all_strategies, get_strategy
+from .trading import BrokerError, OrderRequest, get_broker
+from .trading.etrade_broker import ETradeBroker
 
-app = FastAPI(title="Options Strategy Screener", version="0.1.0")
+app = FastAPI(title="Options Strategy Screener", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +57,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    settings = get_settings()
+    db.init_db(settings.paper_starting_cash)
 
 
 def _criteria_from_query(min_oi: Optional[int], min_delta: Optional[float], min_dte: Optional[int]) -> ScreeningCriteria:
@@ -51,14 +81,58 @@ def _parse_tickers(tickers: str) -> list[str]:
     return symbols
 
 
+def _is_live() -> bool:
+    settings = get_settings()
+    return settings.active_broker == "etrade" and settings.live_trading_enabled
+
+
+# --- Auth ------------------------------------------------------------------
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/login")
+def login(body: LoginBody, response: Response) -> dict:
+    settings = get_settings()
+    if not settings.admin_username or not settings.admin_password_hash or not settings.secret_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Auth is not configured. See scripts/create_admin.py.",
+        )
+    if body.username != settings.admin_username or not verify_password(body.password, settings.admin_password_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    set_session_cookie(response, body.username)
+    return {"status": "ok", "username": body.username}
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response) -> dict:
+    clear_session_cookie(response)
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/me")
+def me(username: str = Depends(require_auth)) -> dict:
+    return {"username": username}
+
+
+# --- Health ------------------------------------------------------------------
+
+
 @app.get("/api/health")
 def health() -> dict:
     settings = get_settings()
     return {"status": "ok", "data_provider": settings.data_provider}
 
 
+# --- Screener / strategies (auth required) ------------------------------------
+
+
 @app.get("/api/strategies")
-def list_strategies() -> dict:
+def list_strategies(username: str = Depends(require_auth)) -> dict:
     return {"strategies": [s.metadata() for s in all_strategies()]}
 
 
@@ -68,6 +142,7 @@ def screen(
     min_oi: Optional[int] = Query(None, ge=0),
     min_delta: Optional[float] = Query(None, ge=0, le=1),
     min_dte: Optional[int] = Query(None, ge=0),
+    username: str = Depends(require_auth),
 ) -> dict:
     provider = get_provider()
     criteria = _criteria_from_query(min_oi, min_delta, min_dte)
@@ -96,6 +171,7 @@ def scan(
     min_oi: Optional[int] = Query(None, ge=0),
     min_delta: Optional[float] = Query(None, ge=0, le=1),
     min_dte: Optional[int] = Query(None, ge=0),
+    username: str = Depends(require_auth),
 ) -> dict:
     provider = get_provider()
     criteria = _criteria_from_query(min_oi, min_delta, min_dte)
@@ -139,6 +215,130 @@ def scan(
         },
         "results": results,
     }
+
+
+# --- Trading (auth required) ---------------------------------------------------
+
+
+@app.get("/api/broker/status")
+def broker_status(username: str = Depends(require_auth)) -> dict:
+    settings = get_settings()
+    is_live = _is_live()
+    return {
+        "active_broker_setting": settings.active_broker,
+        "live_trading_enabled": settings.live_trading_enabled,
+        "effective_broker": "etrade" if is_live else "paper",
+        "is_live": is_live,
+    }
+
+
+@app.get("/api/account")
+def get_account(username: str = Depends(require_auth)) -> dict:
+    try:
+        return account_to_dict(get_broker().get_account())
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/positions")
+def get_positions(username: str = Depends(require_auth)) -> dict:
+    try:
+        return {"positions": [position_to_dict(p) for p in get_broker().get_positions()]}
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/orders")
+def list_orders(username: str = Depends(require_auth)) -> dict:
+    try:
+        return {"orders": [order_to_dict(o) for o in get_broker().list_orders()]}
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class OrderBody(BaseModel):
+    symbol: str
+    asset_type: str  # "equity" | "option"
+    side: str  # "buy" | "sell"
+    quantity: int
+    order_type: str  # "market" | "limit"
+    limit_price: Optional[float] = None
+    option_type: Optional[str] = None
+    strike: Optional[float] = None
+    expiration: Optional[str] = None  # ISO date, e.g. "2026-09-25"
+    rationale: Optional[str] = None
+    confirm_live: bool = False
+
+
+@app.post("/api/orders")
+def place_order(body: OrderBody, username: str = Depends(require_auth)) -> dict:
+    if _is_live() and not body.confirm_live:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "LIVE TRADING is enabled and this would place a REAL order with real money. "
+                "Resubmit with confirm_live=true to proceed."
+            ),
+        )
+    try:
+        expiration = date.fromisoformat(body.expiration) if body.expiration else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid expiration date: {exc}") from exc
+
+    request = OrderRequest(
+        symbol=body.symbol,
+        asset_type=body.asset_type,
+        side=body.side,
+        quantity=body.quantity,
+        order_type=body.order_type,
+        limit_price=body.limit_price,
+        option_type=body.option_type,
+        strike=body.strike,
+        expiration=expiration,
+        rationale=body.rationale,
+    )
+    try:
+        result = get_broker().place_order(request)
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return order_to_dict(result)
+
+
+@app.post("/api/orders/{order_id}/cancel")
+def cancel_order(order_id: int, username: str = Depends(require_auth)) -> dict:
+    try:
+        result = get_broker().cancel_order(order_id)
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return order_to_dict(result)
+
+
+class EtradeCompleteAuthBody(BaseModel):
+    request_token: str
+    request_token_secret: str
+    verifier: str
+
+
+@app.get("/api/broker/etrade/auth-url")
+def etrade_auth_url(username: str = Depends(require_auth)) -> dict:
+    try:
+        authorize_url, request_token, request_token_secret = ETradeBroker.start_authorization()
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "authorize_url": authorize_url,
+        "request_token": request_token,
+        "request_token_secret": request_token_secret,
+    }
+
+
+@app.post("/api/broker/etrade/complete-auth")
+def etrade_complete_auth(body: EtradeCompleteAuthBody, username: str = Depends(require_auth)) -> dict:
+    try:
+        ETradeBroker.complete_authorization(body.request_token, body.request_token_secret, body.verifier)
+    except BrokerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
 
 
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"

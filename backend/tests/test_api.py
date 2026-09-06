@@ -1,21 +1,32 @@
-import os
+def test_unauthenticated_requests_are_rejected(fresh_db):
+    from fastapi.testclient import TestClient
 
-os.environ.setdefault("DATA_PROVIDER", "mock")
+    from app.main import app
 
-from fastapi.testclient import TestClient  # noqa: E402
+    with TestClient(app) as anon:
+        assert anon.get("/api/strategies").status_code == 401
+        assert anon.get("/api/screen", params={"ticker": "AAPL"}).status_code == 401
+        assert anon.get("/api/scan", params={"tickers": "AAPL"}).status_code == 401
+        assert anon.get("/api/account").status_code == 401
 
-from app.main import app  # noqa: E402
 
-client = TestClient(app)
-
-
-def test_health():
+def test_health_is_public(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json()["data_provider"] == "mock"
 
 
-def test_list_strategies():
+def test_login_wrong_password_rejected(fresh_db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as anon:
+        resp = anon.post("/api/auth/login", json={"username": "testadmin", "password": "wrong"})
+        assert resp.status_code == 401
+
+
+def test_list_strategies(client):
     resp = client.get("/api/strategies")
     assert resp.status_code == 200
     body = resp.json()
@@ -23,7 +34,7 @@ def test_list_strategies():
     assert all("trader_attribution" in s for s in body["strategies"])
 
 
-def test_screen_endpoint():
+def test_screen_endpoint(client):
     resp = client.get("/api/screen", params={"ticker": "AAPL"})
     assert resp.status_code == 200
     body = resp.json()
@@ -35,12 +46,12 @@ def test_screen_endpoint():
         assert c["days_to_expiration"] >= 14
 
 
-def test_screen_unknown_symbol_in_mock_mode_returns_400():
+def test_screen_unknown_symbol_in_mock_mode_returns_400(client):
     resp = client.get("/api/screen", params={"ticker": "NOTAREALTICKERXYZ"})
     assert resp.status_code == 400
 
 
-def test_scan_single_strategy():
+def test_scan_single_strategy(client):
     resp = client.get("/api/scan", params={"tickers": "AAPL", "strategy": "covered_call"})
     assert resp.status_code == 200
     body = resp.json()
@@ -51,7 +62,7 @@ def test_scan_single_strategy():
     assert all(i["strategy_key"] == "covered_call" for i in result["ideas"])
 
 
-def test_scan_all_strategies_multiple_tickers():
+def test_scan_all_strategies_multiple_tickers(client):
     resp = client.get("/api/scan", params={"tickers": "AAPL,MSFT", "strategy": "all"})
     assert resp.status_code == 200
     body = resp.json()
@@ -60,12 +71,12 @@ def test_scan_all_strategies_multiple_tickers():
         assert result["ideas"]
 
 
-def test_scan_unknown_strategy_404():
+def test_scan_unknown_strategy_404(client):
     resp = client.get("/api/scan", params={"tickers": "AAPL", "strategy": "not_a_strategy"})
     assert resp.status_code == 404
 
 
-def test_scan_custom_criteria_tightens_results():
+def test_scan_custom_criteria_tightens_results(client):
     loose = client.get("/api/scan", params={"tickers": "AAPL", "strategy": "cash_secured_put"}).json()
     strict = client.get(
         "/api/scan",

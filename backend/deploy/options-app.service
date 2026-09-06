@@ -9,6 +9,24 @@ Group=optionsapp
 WorkingDirectory=/home/optionsapp/options-app/backend
 Environment=DATA_PROVIDER=yfinance
 Environment=PATH=/home/optionsapp/options-app/backend/.venv/bin
+Environment=DB_PATH=/home/optionsapp/options-app/backend/options_app.db
+
+# --- Auth (required -- the app returns 503 on every request until these are
+# set). Generate real values with `python3 scripts/create_admin.py` and
+# replace the placeholders below; do not commit real values to git.
+Environment=SECRET_KEY=REPLACE_ME_WITH_OUTPUT_OF_create_admin.py
+Environment=ADMIN_USERNAME=REPLACE_ME
+Environment=ADMIN_PASSWORD_HASH=REPLACE_ME_WITH_OUTPUT_OF_create_admin.py
+
+# --- Trading (optional -- these are the safe defaults: simulated paper
+# trading only). To enable real E*TRADE order placement, see
+# backend/deploy/CYBERPANEL.md's "Auth & trading setup" section -- it walks
+# through the safety implications before you touch ACTIVE_BROKER/
+# LIVE_TRADING_ENABLED.
+Environment=ACTIVE_BROKER=paper
+Environment=LIVE_TRADING_ENABLED=false
+Environment=PAPER_STARTING_CASH=100000
+
 ExecStart=/home/optionsapp/options-app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8005
 Restart=always
 RestartSec=3

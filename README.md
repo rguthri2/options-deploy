@@ -1,13 +1,16 @@
 # Options
 
-An options-strategy screener: it filters option chains down to liquid,
-directional contracts and surfaces trade ideas modeled on well-known
-options-trading strategies.
+An options-strategy screener with order placement: it filters option chains
+down to liquid, directional contracts, surfaces trade ideas modeled on
+well-known options-trading strategies, and can place orders against a
+simulated paper account or (optionally, gated behind explicit configuration
+and per-order confirmation) a real E*TRADE account.
 
-**This is a research/education tool, not a trading system.** It does not
-place orders, connect to a brokerage, or manage a portfolio, and nothing here
-is financial advice. Quotes, greeks, and payoff figures are estimates — verify
-everything with your broker before acting on it.
+**Nothing here is financial advice**, and quotes/greeks/payoff figures are
+estimates — verify everything with your broker before acting on it. The app
+places real orders **only** if you explicitly configure it to (see
+[Auth & trading](#auth--trading) below); by default every order goes to a
+simulated paper account and no real money is ever at risk.
 
 ## Screening criteria
 
@@ -61,9 +64,17 @@ backend/
       mock_provider.py       # deterministic offline sample data (default)
       yfinance_provider.py   # live data via the `yfinance` package
     strategies/            # one module per strategy, self-registering
+    auth.py               # PBKDF2 password hashing + signed session cookies
+    db.py                  # sqlite3 persistence: orders, paper account, E*TRADE tokens
+    trading/                 # pluggable brokers, mirrors providers/
+      base.py                   # Broker interface
+      paper_broker.py            # simulated fills against live quotes
+      etrade_broker.py            # OAuth1 + real order placement (equity only)
     serializers.py       # dataclass -> JSON dict
     main.py             # FastAPI app + routes, serves frontend/
-  tests/               # pytest, run entirely against the mock provider
+  scripts/
+    create_admin.py     # generates ADMIN_USERNAME/ADMIN_PASSWORD_HASH/SECRET_KEY
+  tests/               # pytest, run entirely against the mock provider + paper broker
 frontend/
   index.html, app.js, styles.css   # vanilla JS UI, no build step
 ```
@@ -86,11 +97,20 @@ live data with `DATA_PROVIDER=yfinance` (see below).
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python3 scripts/create_admin.py   # prints env vars auth needs -- see below
+```
+
+Export what it prints (plus `COOKIE_SECURE=false`, since local dev is plain
+http, not https) before starting the server:
+
+```bash
+export ADMIN_USERNAME=... ADMIN_PASSWORD_HASH='...' SECRET_KEY=... COOKIE_SECURE=false
 uvicorn app.main:app --reload
 ```
 
-Then open http://127.0.0.1:8000/ — the FastAPI app serves the frontend
-directly, no separate server needed.
+Then open http://127.0.0.1:8000/ and log in — the FastAPI app serves the
+frontend directly, no separate server needed. Without those env vars set,
+every route except `/api/health` returns `503`.
 
 By default it runs against the mock provider. For live data:
 
@@ -150,9 +170,49 @@ pytest
 Tests run entirely against `MockProvider`, so they don't require network
 access and are deterministic.
 
+## Auth & trading
+
+The whole app (everything except `/api/health`) requires logging in as a
+single admin user — there's no public signup. Set it up:
+
+```bash
+cd backend
+python3 scripts/create_admin.py
+```
+
+This prints `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, and `SECRET_KEY` env
+vars to set before the app will serve anything but a 503. See
+`backend/deploy/options-app.service` for where these go in production, or
+export them directly for local dev.
+
+**Order placement defaults to a paper (simulated) broker** — a virtual cash
+balance and positions tracked in a local SQLite DB (`DB_PATH`, default
+`options_app.db`), with fills simulated against live quotes. No real money
+is ever at risk in this mode, and it needs no broker credentials.
+
+**Real order placement via E*TRADE** is implemented but gated behind two
+separate switches that must both be set (`ACTIVE_BROKER=etrade` and
+`LIVE_TRADING_ENABLED=true`), plus a `confirm_live: true` flag the API
+requires on every individual order request (the UI's confirm-by-typing
+modal handles this for you). Getting there requires your own E*TRADE
+developer account and OAuth setup — full walkthrough, including sandbox
+testing before going live, in `backend/deploy/CYBERPANEL.md`'s
+"Auth & trading setup" section. Read `backend/app/trading/etrade_broker.py`'s
+module docstring first: it was built against E*TRADE's documented API but
+could not be tested end-to-end in the sandbox that built it, and it only
+supports single-leg equity orders (no options orders, no multi-leg spreads
+— see that file for why).
+
 ## API
 
-- `GET /api/health`
-- `GET /api/strategies` — metadata for every strategy (name, attribution, description)
-- `GET /api/screen?ticker=AAPL[&min_oi=&min_delta=&min_dte=]` — screened contracts for one ticker
-- `GET /api/scan?tickers=AAPL,MSFT&strategy=all|<key>[&min_oi=&min_delta=&min_dte=]` — strategy ideas per ticker
+- `GET /api/health` — public
+- `POST /api/auth/login`, `POST /api/auth/logout` — public
+- `GET /api/auth/me` — auth required
+- `GET /api/strategies` — metadata for every strategy (name, attribution, description); auth required
+- `GET /api/screen?ticker=AAPL[&min_oi=&min_delta=&min_dte=]` — screened contracts for one ticker; auth required
+- `GET /api/scan?tickers=AAPL,MSFT&strategy=all|<key>[&min_oi=&min_delta=&min_dte=]` — strategy ideas per ticker; auth required
+- `GET /api/broker/status` — which broker is active and whether live trading is enabled; auth required
+- `GET /api/account`, `GET /api/positions`, `GET /api/orders` — auth required
+- `POST /api/orders` — place an order (paper by default; real E*TRADE orders need `confirm_live: true`); auth required
+- `POST /api/orders/{id}/cancel` — auth required
+- `GET /api/broker/etrade/auth-url`, `POST /api/broker/etrade/complete-auth` — E*TRADE OAuth setup; auth required

@@ -111,6 +111,94 @@ https://options.rginvestor67.com/api/scan?tickers=AAPL,MSFT&strategy=all
 and can be checked from any machine with a browser or curl -- including
 Claude, from a different session, once DNS/SSL are live.
 
+## 7. Auth & trading setup
+
+As of the auth/trading update, the app returns `503` on every request until
+login is configured. Generate real credentials and wire them into the
+systemd unit (the checked-in unit file has placeholder values):
+
+```bash
+sudo -iu optionsapp
+cd options-app/backend && source .venv/bin/activate
+python3 scripts/create_admin.py
+# prints ADMIN_USERNAME=..., ADMIN_PASSWORD_HASH=..., SECRET_KEY=... -- copy these
+deactivate
+exit
+
+sudo nano /etc/systemd/system/options-app.service
+# replace the three REPLACE_ME placeholders under [Service] with the printed values
+sudo systemctl daemon-reload
+sudo systemctl restart options-app
+curl -s http://127.0.0.1:8005/api/auth/me   # should now say {"detail":"Not authenticated"}, not 503
+```
+
+The app defaults to **paper trading** (`ACTIVE_BROKER=paper`,
+`LIVE_TRADING_ENABLED=false`) regardless of anything else -- this is
+intentional and safe to leave as-is indefinitely; the screener and paper
+trading UI work fully without ever touching E*TRADE.
+
+### Enabling real E*TRADE order placement (optional, real money)
+
+Read `backend/app/trading/etrade_broker.py`'s module docstring first --
+this integration was built against E*TRADE's documented API but could not
+be tested end-to-end from the sandboxed session that built it (no network
+path to etrade.com from there at all). Test extensively in E*TRADE's
+sandbox before ever going live.
+
+1. Register a developer app at https://developer.etrade.com -- this gives
+   you a **sandbox** consumer key/secret immediately; production keys
+   require an additional approval step from E*TRADE.
+2. Add to the systemd unit and restart:
+   ```
+   Environment=ETRADE_CONSUMER_KEY=your_sandbox_key
+   Environment=ETRADE_CONSUMER_SECRET=your_sandbox_secret
+   Environment=ETRADE_SANDBOX=true
+   Environment=ACTIVE_BROKER=etrade
+   ```
+   Leave `LIVE_TRADING_ENABLED=false` for now -- with `ETRADE_SANDBOX=true`
+   this exercises the real OAuth + order flow against E*TRADE's sandbox
+   (fake fills, no real money) without needing the live-trading gate open.
+3. While logged into the app, complete the OAuth handshake:
+   - `GET /api/broker/etrade/auth-url` (send the session cookie, e.g. via
+     the browser's devtools network tab, or `curl -b cookies.txt`) returns
+     an `authorize_url` plus a `request_token`/`request_token_secret` pair.
+   - Open `authorize_url` in a browser, log into E*TRADE, and copy the
+     verifier code it displays.
+   - `POST /api/broker/etrade/complete-auth` with
+     `{"request_token": "...", "request_token_secret": "...", "verifier": "..."}`
+     (the two token values from the previous step, not values you invent).
+4. Place small sandbox orders through the UI and confirm they behave as
+   expected -- preview/place succeed, `/api/account` and `/api/orders`
+   reflect them correctly, cancel works.
+5. Only after that: switch `ETRADE_SANDBOX=false` (using your approved
+   production consumer key/secret) and, when you are ready for the safety
+   gate itself, `LIVE_TRADING_ENABLED=true`. Every order still requires
+   `confirm_live: true` in the request even then -- the UI's confirm modal
+   handles this, but note it if you ever call the API directly.
+6. Access tokens expire at midnight US Eastern and go inactive after 2
+   hours idle. If orders start failing with an auth-shaped error, redo step
+   3.
+
+`options_app.db` (path set by `DB_PATH` in the unit file) holds order
+history, the paper account balance, and E*TRADE tokens -- back it up like
+any other stateful data, and don't commit it to git (it isn't tracked).
+
+## 8. Adding rginvestor67.com as the main site
+
+Since `rginvestor67.com` is unused, point it at the same backend service
+(no second deployment needed -- one systemd service, two domains):
+
+1. **Websites -> Create Website** for `rginvestor67.com` in CyberPanel.
+2. Repeat step 3 above (External App + Proxy Context, or the Rewrite
+   Rules UI) for this new virtual host, pointing at the same
+   `127.0.0.1:8005`.
+3. Issue SSL for `rginvestor67.com` the same way (step 4).
+4. Both `https://rginvestor67.com` and `https://options.rginvestor67.com`
+   now serve the identical app/session store -- logging in on one does not
+   log you into the other (cookies are per-domain), but the data
+   (orders, positions, paper account) is shared since it's the same
+   backend and database.
+
 ## Updating the deployed code later
 
 ```bash
