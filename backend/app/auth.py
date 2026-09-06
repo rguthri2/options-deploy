@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import secrets
 import time
+from typing import Optional
 
 from fastapi import Cookie, HTTPException, Response
 
@@ -103,7 +104,7 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE_NAME)
 
 
-def require_auth(session: str | None = Cookie(default=None)) -> str:
+def require_auth(session: Optional[str] = Cookie(default=None)) -> str:
     """FastAPI dependency: returns the logged-in username, or raises 401."""
     settings = get_settings()
     if not settings.secret_key or not settings.admin_username or not settings.admin_password_hash:
