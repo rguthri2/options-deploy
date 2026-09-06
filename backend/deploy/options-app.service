@@ -1,0 +1,26 @@
+[Unit]
+Description=Options Strategy Screener (FastAPI/uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=optionsapp
+Group=optionsapp
+WorkingDirectory=/home/optionsapp/options-app/backend
+Environment=DATA_PROVIDER=yfinance
+Environment=PATH=/home/optionsapp/options-app/backend/.venv/bin
+ExecStart=/home/optionsapp/options-app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+# Light sandboxing -- harmless for this app (no writes outside the repo,
+# no need for extra privileges) and cheap insurance if a dependency ever
+# tries something it shouldn't.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/home/optionsapp/options-app
+
+[Install]
+WantedBy=multi-user.target

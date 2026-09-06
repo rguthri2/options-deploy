@@ -101,6 +101,15 @@ DATA_PROVIDER=yfinance uvicorn app.main:app --reload
 Other tunables (env vars, or per-request query params on `/api/screen` and
 `/api/scan`): `MIN_OPEN_INTEREST`, `MIN_ABS_DELTA`, `MIN_DAYS_TO_EXPIRATION`.
 
+### Deploying to a real server
+
+See [`backend/deploy/CYBERPANEL.md`](backend/deploy/CYBERPANEL.md) for a
+step-by-step guide to deploying on a CyberPanel (OpenLiteSpeed) VPS as a
+systemd service behind a reverse proxy -- including the `options-app.service`
+unit file in that same directory. A real VPS's outbound network path is
+independent of any Claude Code Remote sandbox, so it's the environment to use
+for a genuine live test of the `yfinance` provider.
+
 ## Testing the yfinance provider against live data
 
 The `MockProvider` is what this repo's automated tests and the sandboxed
