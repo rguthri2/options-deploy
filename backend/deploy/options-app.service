@@ -9,7 +9,7 @@ Group=optionsapp
 WorkingDirectory=/home/optionsapp/options-app/backend
 Environment=DATA_PROVIDER=yfinance
 Environment=PATH=/home/optionsapp/options-app/backend/.venv/bin
-ExecStart=/home/optionsapp/options-app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=/home/optionsapp/options-app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8005
 Restart=always
 RestartSec=3
 
