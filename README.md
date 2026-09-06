@@ -120,6 +120,16 @@ It fetches real quotes and option chains, runs them through the screener, and
 exercises the full `/api/scan` HTTP path with `DATA_PROVIDER=yfinance`,
 printing sample screened contracts and any errors. Exits non-zero on failure.
 
+**Known result:** two separate Claude Code Remote environments both block
+outbound access to Yahoo Finance (`query1/query2.finance.yahoo.com`,
+`fc.yahoo.com`, `guce.yahoo.com` all reject the CONNECT tunnel with a 403 at
+the proxy layer). The app itself degrades correctly under that failure —
+`/api/scan` returns 200 with a per-symbol `error` field, `/api/screen`
+returns 400 with a clear message, neither crashes — but real live-data
+verification has to happen outside those sandboxes: a developer's own
+machine, or a CI runner with unrestricted egress. Full evidence and raw
+output from both attempts: [`backend/scripts/yfinance_live_test_report.md`](backend/scripts/yfinance_live_test_report.md).
+
 ## Tests
 
 ```bash
