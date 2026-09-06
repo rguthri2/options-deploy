@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from typing import Optional
 
 from ..models import OptionContract, OptionType, StrategyIdea, Underlying
 
@@ -63,5 +64,5 @@ def all_strategies() -> list[Strategy]:
     return list(_REGISTRY.values())
 
 
-def get_strategy(key: str) -> Strategy | None:
+def get_strategy(key: str) -> Optional[Strategy]:
     return _REGISTRY.get(key)

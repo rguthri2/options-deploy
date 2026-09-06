@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Optional
 
 
 @dataclass
@@ -12,17 +13,17 @@ class OrderRequest:
     side: str  # "buy" | "sell"
     quantity: int
     order_type: str  # "market" | "limit"
-    limit_price: float | None = None
-    option_type: str | None = None  # "call" | "put"
-    strike: float | None = None
-    expiration: date | None = None
-    rationale: str | None = None
+    limit_price: Optional[float] = None
+    option_type: Optional[str] = None  # "call" | "put"
+    strike: Optional[float] = None
+    expiration: Optional[date] = None
+    rationale: Optional[str] = None
 
     @property
     def contract_multiplier(self) -> int:
         return 100 if self.asset_type == "option" else 1
 
-    def validate(self) -> str | None:
+    def validate(self) -> Optional[str]:
         """Return an error message if invalid, else None."""
         if self.side not in ("buy", "sell"):
             return f"Invalid side '{self.side}'."
@@ -49,15 +50,15 @@ class OrderResult:
     quantity: int
     order_type: str
     status: str  # "pending" | "filled" | "canceled" | "rejected"
-    limit_price: float | None = None
-    option_type: str | None = None
-    strike: float | None = None
-    expiration: str | None = None
-    filled_price: float | None = None
-    filled_at: str | None = None
-    broker_order_id: str | None = None
-    rejection_reason: str | None = None
-    rationale: str | None = None
+    limit_price: Optional[float] = None
+    option_type: Optional[str] = None
+    strike: Optional[float] = None
+    expiration: Optional[str] = None
+    filled_price: Optional[float] = None
+    filled_at: Optional[str] = None
+    broker_order_id: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    rationale: Optional[str] = None
     created_at: str = ""
 
 
@@ -68,9 +69,9 @@ class Position:
     quantity: int  # positive = long, negative = short
     avg_cost: float  # per share/contract
     current_price: float
-    option_type: str | None = None
-    strike: float | None = None
-    expiration: str | None = None
+    option_type: Optional[str] = None
+    strike: Optional[float] = None
+    expiration: Optional[str] = None
 
     @property
     def contract_multiplier(self) -> int:

@@ -14,6 +14,7 @@ Deliberate MVP simplifications (documented rather than hidden):
 from __future__ import annotations
 
 from datetime import date
+from typing import Optional, Tuple
 
 from .. import db
 from ..providers import MarketDataProvider, get_provider
@@ -22,7 +23,12 @@ from .base import Broker, BrokerError
 from .models import AccountSummary, OrderRequest, OrderResult, Position
 from .serializers import row_to_order_result
 
-PositionKey = tuple[str, str, str | None, float | None, str | None]
+# NOTE: this is a plain assignment, not a type annotation -- `from __future__
+# import annotations` only defers annotation evaluation, so `X | Y` syntax
+# here would still execute immediately and crash on Python < 3.10. Use
+# typing.Optional/Tuple instead of `|`/bare `tuple[...]` for exactly that
+# reason (confirmed by an actual crash on a Python 3.9 deployment).
+PositionKey = Tuple[str, str, Optional[str], Optional[float], Optional[str]]
 
 
 def _current_price(provider: MarketDataProvider, request: OrderRequest) -> float:
@@ -70,7 +76,7 @@ _row_to_result = row_to_order_result
 class PaperBroker(Broker):
     name = "paper"
 
-    def __init__(self, provider: MarketDataProvider | None = None):
+    def __init__(self, provider: Optional[MarketDataProvider] = None):
         self._provider = provider or get_provider()
 
     def _held_quantity(self, request: OrderRequest) -> int:

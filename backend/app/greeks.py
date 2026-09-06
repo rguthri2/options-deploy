@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from typing import Optional
 
 from .models import OptionContract, OptionType, Underlying
 
@@ -31,7 +32,7 @@ def black_scholes_delta(
     option_type: OptionType,
     risk_free_rate: float = DEFAULT_RISK_FREE_RATE,
     dividend_yield: float = 0.0,
-) -> float | None:
+) -> Optional[float]:
     """Return the Black-Scholes delta for a European-style option.
 
     Returns None if inputs are degenerate (expired, no volatility, etc.) since
@@ -51,7 +52,7 @@ def black_scholes_delta(
     return discount * (_norm_cdf(d1) - 1.0)
 
 
-def days_to_expiration(expiration: date, as_of: date | None = None) -> int:
+def days_to_expiration(expiration: date, as_of: Optional[date] = None) -> int:
     as_of = as_of or date.today()
     return (expiration - as_of).days
 
@@ -60,7 +61,7 @@ def enrich_contract(
     contract: OptionContract,
     underlying: Underlying,
     *,
-    as_of: date | None = None,
+    as_of: Optional[date] = None,
     risk_free_rate: float = DEFAULT_RISK_FREE_RATE,
 ) -> OptionContract:
     """Fill in `delta` and `days_to_expiration` on a contract in place, and return it."""

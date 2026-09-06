@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Optional
 
 from .greeks import enrich_contract
 from .models import OptionContract, ScreeningCriteria, Underlying
@@ -10,9 +11,9 @@ from .models import OptionContract, ScreeningCriteria, Underlying
 def screen_chain(
     contracts: list[OptionContract],
     underlying: Underlying,
-    criteria: ScreeningCriteria | None = None,
+    criteria: Optional[ScreeningCriteria] = None,
     *,
-    as_of: date | None = None,
+    as_of: Optional[date] = None,
 ) -> list[OptionContract]:
     """Enrich each contract with delta/DTE, then return only the ones passing `criteria`."""
     criteria = criteria or ScreeningCriteria()

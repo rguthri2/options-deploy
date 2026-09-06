@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
+from typing import Optional
 
 
 class OptionType(str, Enum):
@@ -27,8 +28,8 @@ class OptionContract:
     contract_symbol: str = ""
 
     # Computed by greeks.enrich_contract() before screening.
-    delta: float | None = None
-    days_to_expiration: int | None = None
+    delta: Optional[float] = None
+    days_to_expiration: Optional[int] = None
 
     @property
     def mid_price(self) -> float:
@@ -72,7 +73,7 @@ class ScreeningCriteria:
 @dataclass
 class StrategyLeg:
     action: str  # "buy" or "sell"
-    contract: OptionContract | None  # None for the "buy 100 shares" leg
+    contract: Optional[OptionContract]  # None for the "buy 100 shares" leg
     quantity: int = 1
     description: str = ""
 
@@ -86,7 +87,7 @@ class StrategyIdea:
     underlying_price: float
     legs: list[StrategyLeg]
     rationale: str
-    max_profit: float | None
-    max_loss: float | None
+    max_profit: Optional[float]
+    max_loss: Optional[float]
     breakeven: list[float]
     net_cost: float  # positive = debit paid, negative = credit received

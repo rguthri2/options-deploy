@@ -12,6 +12,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
 from .config import get_settings
 
@@ -113,12 +114,12 @@ def update_order(order_id: int, **fields) -> None:
         conn.execute(f"UPDATE orders SET {set_clause} WHERE id = ?", (*fields.values(), order_id))
 
 
-def get_order(order_id: int) -> sqlite3.Row | None:
+def get_order(order_id: int) -> Optional[sqlite3.Row]:
     with connection() as conn:
         return conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
 
 
-def list_orders(broker: str | None = None) -> list[sqlite3.Row]:
+def list_orders(broker: Optional[str] = None) -> list[sqlite3.Row]:
     with connection() as conn:
         if broker:
             return conn.execute(
@@ -136,12 +137,12 @@ def list_filled_orders(broker: str) -> list[sqlite3.Row]:
 
 # --- E*TRADE tokens --------------------------------------------------------
 
-def get_etrade_tokens() -> sqlite3.Row | None:
+def get_etrade_tokens() -> Optional[sqlite3.Row]:
     with connection() as conn:
         return conn.execute("SELECT * FROM etrade_tokens WHERE id = 1").fetchone()
 
 
-def save_etrade_tokens(oauth_token: str, oauth_token_secret: str, account_id_key: str | None = None) -> None:
+def save_etrade_tokens(oauth_token: str, oauth_token_secret: str, account_id_key: Optional[str] = None) -> None:
     with connection() as conn:
         conn.execute(
             """

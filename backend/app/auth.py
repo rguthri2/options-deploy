@@ -25,7 +25,7 @@ _ALGO = "pbkdf2_sha256"
 SESSION_COOKIE_NAME = "session"
 
 
-def hash_password(password: str, *, salt: bytes | None = None) -> str:
+def hash_password(password: str, *, salt: Optional[bytes] = None) -> str:
     salt = salt or secrets.token_bytes(16)
     derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITERATIONS)
     return f"{_ALGO}${_PBKDF2_ITERATIONS}${salt.hex()}${derived.hex()}"
@@ -61,7 +61,7 @@ def create_session_token(username: str, *, secret_key: str, max_age_seconds: int
     return f"{_b64url_encode(payload)}.{_b64url_encode(signature)}"
 
 
-def verify_session_token(token: str, *, secret_key: str) -> str | None:
+def verify_session_token(token: str, *, secret_key: str) -> Optional[str]:
     """Return the username if `token` is a valid, unexpired session token."""
     try:
         payload_b64, signature_b64 = token.split(".")
