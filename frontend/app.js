@@ -248,6 +248,7 @@ async function placeOrder(orderBody) {
     }
     orderBody = { ...orderBody, confirm_live: true };
   }
+  els.status.textContent = "Placing order...";
   const { ok, data } = await apiPostJSON("/orders", orderBody);
   if (!ok) {
     els.status.textContent = data.detail || "Order failed.";
@@ -264,7 +265,19 @@ els.results.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-leg-index]");
   if (!btn) return;
   const order = legRegistry[Number(btn.getAttribute("data-leg-index"))];
-  if (order) placeOrder(order);
+  if (!order) return;
+  btn.disabled = true;
+  placeOrder(order)
+    .catch((err) => {
+      // Guards against silent failures (e.g. a session expiring mid-click,
+      // or a network error) that would otherwise show nothing at all --
+      // apiFetch's own 401 handling already calls showLogin(), so this is
+      // mainly for anything unexpected.
+      els.status.textContent = `Error: ${err.message}`;
+    })
+    .finally(() => {
+      btn.disabled = false;
+    });
 });
 
 // --- Strategy scan / rendering ------------------------------------------------
