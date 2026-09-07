@@ -1,20 +1,36 @@
 const API = "/api";
 
 // Fixed hue order from the dataviz reference palette -- never cycled/reassigned.
-const SERIES_COLORS = [
-  "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-  "#e87ba4", "#008300", "#4a3aa7", "#e34948",
-];
-const UP_COLOR = "#2a78d6";   // diverging "blue" pole -- CVD-safe stand-in for "gain"
-const DOWN_COLOR = "#e34948"; // diverging "red" pole -- CVD-safe stand-in for "loss"
+// Light and dark are each their own selected steps (per the dataviz skill),
+// not one palette auto-darkened -- these mirror the CSS custom properties in
+// site.css's light/dark blocks. Presentation attributes inside SVG strings
+// use these resolved hex values directly rather than var(--...) for
+// cross-browser reliability, so charts re-render (not CSS-repaint) on toggle.
+const PALETTE = {
+  light: {
+    series: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
+    up: "#2a78d6", down: "#e34948",
+    ink: "#0b0b0b", inkSecondary: "#52514e", inkMuted: "#898781",
+    grid: "#e1e0d9", baseline: "#c3c2b7",
+  },
+  dark: {
+    series: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
+    up: "#3987e5", down: "#e66767",
+    ink: "#ffffff", inkSecondary: "#c3c2b7", inkMuted: "#898781",
+    grid: "#2c2c2a", baseline: "#383835",
+  },
+};
 
-// Chart chrome, inlined as hex (not CSS var()) since SVG presentation-attribute
-// support for custom properties is inconsistent across older browsers.
-const CHART_INK = "#0b0b0b";
-const CHART_INK_SECONDARY = "#52514e";
-const CHART_INK_MUTED = "#898781";
-const CHART_GRID = "#e1e0d9";
-const CHART_BASELINE = "#c3c2b7";
+function isDarkMode() {
+  const attr = document.documentElement.getAttribute("data-theme");
+  if (attr === "dark") return true;
+  if (attr === "light") return false;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function colors() {
+  return isDarkMode() ? PALETTE.dark : PALETTE.light;
+}
 
 const HOME_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "SPY"];
 const NEWS_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "SPY"];
@@ -62,13 +78,14 @@ function timeAgo(iso) {
 
 function sparklineSVG(values, { width = 120, height = 36 } = {}) {
   if (!values || values.length < 2) return "";
+  const c = colors();
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
   const stepX = width / (values.length - 1);
   const pts = values.map((v, i) => [i * stepX, height - ((v - min) / span) * (height - 4) - 2]);
   const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
-  const color = values[values.length - 1] >= values[0] ? UP_COLOR : DOWN_COLOR;
+  const color = values[values.length - 1] >= values[0] ? c.up : c.down;
   const last = pts[pts.length - 1];
   return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="price trend">
     <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -84,6 +101,7 @@ function renderLineChart(container, points, { width = 640, height = 240 } = {}) 
     container.innerHTML = `<div class="empty-note">Not enough data to chart.</div>`;
     return;
   }
+  const c = colors();
   const id = `lc${_lineChartSeq++}`;
   const margin = { top: 16, right: 12, bottom: 24, left: 56 };
   const innerW = width - margin.left - margin.right;
@@ -100,7 +118,7 @@ function renderLineChart(container, points, { width = 640, height = 240 } = {}) 
   const x = (i) => margin.left + (i / (points.length - 1)) * innerW;
   const y = (v) => margin.top + innerH - ((v - min) / (max - min)) * innerH;
 
-  const color = closes[closes.length - 1] >= closes[0] ? UP_COLOR : DOWN_COLOR;
+  const color = closes[closes.length - 1] >= closes[0] ? c.up : c.down;
   const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.c).toFixed(1)}`).join(" ");
   const areaPath = `${linePath} L${x(points.length - 1).toFixed(1)},${(margin.top + innerH).toFixed(1)} ` +
     `L${x(0).toFixed(1)},${(margin.top + innerH).toFixed(1)} Z`;
@@ -110,8 +128,8 @@ function renderLineChart(container, points, { width = 640, height = 240 } = {}) 
   for (let g = 0; g <= gridCount; g++) {
     const v = min + ((max - min) * g) / gridCount;
     const yy = y(v).toFixed(1);
-    gridLines += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yy}" y2="${yy}" stroke="${CHART_GRID}" stroke-width="1" />`;
-    gridLines += `<text x="${margin.left - 8}" y="${yy}" text-anchor="end" dominant-baseline="middle" font-size="10" fill="${CHART_INK_MUTED}">$${v.toFixed(2)}</text>`;
+    gridLines += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yy}" y2="${yy}" stroke="${c.grid}" stroke-width="1" />`;
+    gridLines += `<text x="${margin.left - 8}" y="${yy}" text-anchor="end" dominant-baseline="middle" font-size="10" fill="${c.inkMuted}">$${v.toFixed(2)}</text>`;
   }
 
   const lastPt = points[points.length - 1];
@@ -124,9 +142,9 @@ function renderLineChart(container, points, { width = 640, height = 240 } = {}) 
         <path d="${areaPath}" fill="${color}" opacity="0.10" stroke="none" />
         <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         <circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(lastPt.c).toFixed(1)}" r="4" fill="${color}" stroke="#fff" stroke-width="2" />
-        <text x="${x(points.length - 1).toFixed(1)}" y="${(y(lastPt.c) - 10).toFixed(1)}" text-anchor="end" font-size="11" font-weight="700" fill="${CHART_INK}">${endLabel}</text>
+        <text x="${x(points.length - 1).toFixed(1)}" y="${(y(lastPt.c) - 10).toFixed(1)}" text-anchor="end" font-size="11" font-weight="700" fill="${c.ink}">${endLabel}</text>
         <g id="${id}-hover" style="display:none">
-          <line id="${id}-crosshair" x1="0" x2="0" y1="${margin.top}" y2="${margin.top + innerH}" stroke="${CHART_BASELINE}" stroke-width="1" />
+          <line id="${id}-crosshair" x1="0" x2="0" y1="${margin.top}" y2="${margin.top + innerH}" stroke="${c.baseline}" stroke-width="1" />
           <circle id="${id}-dot" r="4" fill="${color}" stroke="#fff" stroke-width="2" />
         </g>
         <rect id="${id}-capture" x="${margin.left}" y="${margin.top}" width="${innerW}" height="${innerH}" fill="transparent" />
@@ -180,6 +198,7 @@ function renderDonutChart(container, segments, { width = 260, height = 260 } = {
     container.innerHTML = `<div class="empty-note">No positions to show.</div>`;
     return;
   }
+  const c = colors();
   const cx = width / 2;
   const cy = height / 2;
   const rOuter = Math.min(width, height) / 2 - 8;
@@ -198,7 +217,7 @@ function renderDonutChart(container, segments, { width = 260, height = 260 } = {
     const x1o = cx + rOuter * Math.cos(a1), y1o = cy + rOuter * Math.sin(a1);
     const x1i = cx + rInner * Math.cos(a1), y1i = cy + rInner * Math.sin(a1);
     const x0i = cx + rInner * Math.cos(a0), y0i = cy + rInner * Math.sin(a0);
-    const color = SERIES_COLORS[i % SERIES_COLORS.length];
+    const color = c.series[i % c.series.length];
     paths += `<path d="M${x0o.toFixed(2)},${y0o.toFixed(2)} A${rOuter},${rOuter} 0 ${large} 1 ${x1o.toFixed(2)},${y1o.toFixed(2)} ` +
       `L${x1i.toFixed(2)},${y1i.toFixed(2)} A${rInner},${rInner} 0 ${large} 0 ${x0i.toFixed(2)},${y0i.toFixed(2)} Z" fill="${color}">` +
       `<title>${seg.label}: ${fmtMoney(seg.value)} (${(frac * 100).toFixed(1)}%)</title></path>`;
@@ -208,11 +227,11 @@ function renderDonutChart(container, segments, { width = 260, height = 260 } = {
   container.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="portfolio composition">
       ${paths}
-      <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="13" fill="${CHART_INK_SECONDARY}">Total</text>
-      <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="17" font-weight="800" fill="${CHART_INK}">${fmtCompact(total)}</text>
+      <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="13" fill="${c.inkSecondary}">Total</text>
+      <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="17" font-weight="800" fill="${c.ink}">${fmtCompact(total)}</text>
     </svg>
     <div class="legend-row">
-      ${segments.map((s, i) => `<span class="legend-item"><span class="legend-swatch" style="background:${SERIES_COLORS[i % SERIES_COLORS.length]}"></span>${s.label} &middot; ${fmtMoney(s.value, { decimals: 0 })}</span>`).join("")}
+      ${segments.map((s, i) => `<span class="legend-item"><span class="legend-swatch" style="background:${c.series[i % c.series.length]}"></span>${s.label} &middot; ${fmtMoney(s.value, { decimals: 0 })}</span>`).join("")}
     </div>`;
 }
 
@@ -223,6 +242,7 @@ function renderBarChart(container, items, { width = 640, height = 220 } = {}) {
     container.innerHTML = `<div class="empty-note">No data to show.</div>`;
     return;
   }
+  const c = colors();
   const margin = { top: 16, right: 12, bottom: 26, left: 12 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
@@ -235,24 +255,24 @@ function renderBarChart(container, items, { width = 640, height = 220 } = {}) {
   items.forEach((it, i) => {
     const cx = margin.left + bandW * (i + 0.5);
     const h = (Math.abs(it.value) / maxAbs) * (innerH / 2 - 8);
-    const color = it.value >= 0 ? UP_COLOR : DOWN_COLOR;
+    const color = it.value >= 0 ? c.up : c.down;
     const y = it.value >= 0 ? baselineY - h : baselineY;
     const rx = 4;
     bars += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" rx="${rx}" fill="${color}">` +
       `<title>${it.label}: ${fmtMoney(it.value)}</title></rect>`;
     const labelY = it.value >= 0 ? y - 6 : y + h + 14;
-    bars += `<text x="${cx.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="10" fill="${CHART_INK_SECONDARY}">${fmtCompact(it.value)}</text>`;
-    bars += `<text x="${cx.toFixed(1)}" y="${(margin.top + innerH + 16).toFixed(1)}" text-anchor="middle" font-size="10" fill="${CHART_INK_MUTED}">${it.label}</text>`;
+    bars += `<text x="${cx.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="10" fill="${c.inkSecondary}">${fmtCompact(it.value)}</text>`;
+    bars += `<text x="${cx.toFixed(1)}" y="${(margin.top + innerH + 16).toFixed(1)}" text-anchor="middle" font-size="10" fill="${c.inkMuted}">${it.label}</text>`;
   });
 
   container.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="monthly profit and loss">
-      <line x1="${margin.left}" x2="${width - margin.right}" y1="${baselineY}" y2="${baselineY}" stroke="${CHART_BASELINE}" stroke-width="1" />
+      <line x1="${margin.left}" x2="${width - margin.right}" y1="${baselineY}" y2="${baselineY}" stroke="${c.baseline}" stroke-width="1" />
       ${bars}
     </svg>
     <div class="legend-row">
-      <span class="legend-item"><span class="legend-swatch" style="background:${UP_COLOR}"></span>Gain</span>
-      <span class="legend-item"><span class="legend-swatch" style="background:${DOWN_COLOR}"></span>Loss</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:${c.up}"></span>Gain</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:${c.down}"></span>Loss</span>
     </div>`;
 }
 
@@ -262,9 +282,11 @@ function renderBarChart(container, items, { width = 640, height = 220 } = {}) {
 
 const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
 const panels = Array.from(document.querySelectorAll(".tab-panel"));
+const bnavButtons = Array.from(document.querySelectorAll(".bnav-btn[data-tab]"));
 
 function activateTab(name) {
   tabButtons.forEach((b) => b.classList.toggle("is-active", b.dataset.tab === name));
+  bnavButtons.forEach((b) => b.classList.toggle("is-active", b.dataset.tab === name));
   panels.forEach((p) => p.classList.toggle("is-active", p.dataset.panel === name));
   window.location.hash = name;
   onTabShown(name);
@@ -284,13 +306,123 @@ function onTabShown(name) {
   if (name === "level2") loadLevel2("AAPL");
 }
 
+// Re-runs whatever the currently visible tab needs, bypassing the
+// "already loaded" guard -- used after a theme change so charts redraw in
+// the new palette immediately, and incidentally keeps data fresh too.
+function refreshActiveTab() {
+  const active = panels.find((p) => p.classList.contains("is-active"));
+  const name = active && active.dataset.panel;
+  if (name === "home") loadHome();
+  else if (name === "news") loadNews();
+  else if (name === "watchlist") loadWatchlist();
+  else if (name === "portfolio") loadPortfolio();
+  else if (name === "research" && currentResearchSymbol) loadResearch(currentResearchSymbol, currentResearchRange);
+  // scanner and level2 don't use JS-drawn SVG charts (CSS-themed only), so
+  // there's nothing to redraw there on a theme flip.
+}
+
+// --- Bottom mobile nav + "More" sheet ---------------------------------------
+
+const moreSheet = document.getElementById("moreSheet");
+
+function openMoreSheet() {
+  moreSheet.hidden = false;
+}
+function closeMoreSheet() {
+  moreSheet.hidden = true;
+}
+
+document.querySelectorAll(".bnav-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.tab === "more") {
+      openMoreSheet();
+      return;
+    }
+    if (btn.dataset.tab) activateTab(btn.dataset.tab);
+    closeMoreSheet();
+  });
+});
+document.getElementById("moreSheetBackdrop").addEventListener("click", closeMoreSheet);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !moreSheet.hidden) closeMoreSheet();
+});
+
+// --- Theme toggle ------------------------------------------------------------
+
+const THEME_KEY = "rginvestor.theme";
+
+function applyStoredTheme() {
+  let stored = null;
+  try {
+    stored = localStorage.getItem(THEME_KEY);
+  } catch {
+    // localStorage unavailable -- falls back to the system preference.
+  }
+  if (stored === "dark" || stored === "light") {
+    document.documentElement.setAttribute("data-theme", stored);
+  }
+}
+
+document.getElementById("themeToggle").addEventListener("click", () => {
+  const next = isDarkMode() ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch {
+    // per-viewer convenience only -- fine if it doesn't persist
+  }
+  refreshActiveTab();
+});
+
+applyStoredTheme();
+
+// --- Toasts --------------------------------------------------------------
+
+function showToast(message) {
+  const stack = document.getElementById("toastStack");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = message;
+  stack.appendChild(el);
+  setTimeout(() => {
+    el.classList.add("is-leaving");
+    setTimeout(() => el.remove(), 200);
+  }, 2200);
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton loading placeholders
+// ---------------------------------------------------------------------------
+
+function trendCardSkeleton() {
+  return `<div class="trend-card skel-card" aria-hidden="true">
+    <div class="trend-top">
+      <div><div class="skel skel-line w-40" style="margin-bottom:6px"></div><div class="skel skel-line w-60" style="height:8px"></div></div>
+      <div class="skel skel-line w-40" style="height:16px"></div>
+    </div>
+    <div class="skel skel-spark"></div>
+  </div>`;
+}
+
+function newsCardSkeleton() {
+  return `<div class="news-card skel-card" aria-hidden="true">
+    <div class="skel skel-line w-40" style="height:16px;border-radius:999px"></div>
+    <div class="skel skel-line w-90"></div>
+    <div class="skel skel-line w-60"></div>
+  </div>`;
+}
+
+function listRowSkeleton(cols) {
+  return `<div class="list-row" aria-hidden="true">${Array.from({ length: cols }, () => `<span class="skel skel-line w-60"></span>`).join("")}</div>`;
+}
+
 // ---------------------------------------------------------------------------
 // Home
 // ---------------------------------------------------------------------------
 
 async function loadHome() {
   const grid = document.getElementById("trendGrid");
-  grid.innerHTML = HOME_TICKERS.map(() => `<div class="trend-card"><div class="empty-note">Loading…</div></div>`).join("");
+  grid.innerHTML = HOME_TICKERS.map(trendCardSkeleton).join("");
   const cards = await Promise.all(
     HOME_TICKERS.map(async (symbol) => {
       try {
@@ -348,7 +480,7 @@ function renderNewsCards(items) {
 
 async function loadNews() {
   const grid = document.getElementById("newsGrid");
-  grid.innerHTML = `<div class="empty-note">Loading…</div>`;
+  grid.innerHTML = Array.from({ length: 4 }, newsCardSkeleton).join("");
   try {
     const news = await getJSON(`/public/news?symbols=${NEWS_TICKERS.join(",")}`);
     grid.innerHTML = renderNewsCards(news.items);
@@ -386,11 +518,32 @@ async function loadWatchlist() {
   }
   table.innerHTML =
     `<div class="list-row list-head"><span>Symbol</span><span>Price</span><span>Change</span><span class="list-cell-spark">Trend</span><span></span></div>` +
-    list.map((s) => `<div class="list-row" data-row="${s}"><span>${s}</span><span>Loading…</span><span></span><span class="list-cell-spark"></span><button class="list-remove" data-remove="${s}" title="Remove">&times;</button></div>`).join("");
+    list
+      .map(
+        (s) => `<div class="list-row is-clickable" data-row="${s}">
+        <span>${s}</span><span class="skel skel-line w-60"></span><span class="skel skel-line w-40"></span>
+        <span class="list-cell-spark skel skel-spark" style="height:24px"></span>
+        <button class="list-remove" data-remove="${s}" title="Remove">&times;</button>
+      </div>`
+      )
+      .join("");
+
+  table.querySelectorAll(".list-row[data-row]").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("[data-remove]")) return;
+      const symbol = row.dataset.row;
+      activateTab("research");
+      document.getElementById("researchInput").value = symbol;
+      currentResearchSymbol = symbol;
+      loadResearch(symbol, currentResearchRange);
+    });
+  });
 
   table.querySelectorAll("[data-remove]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       setWatchlist(getWatchlist().filter((s) => s !== btn.dataset.remove));
+      showToast(`Removed ${btn.dataset.remove} from watchlist`);
       loadWatchlist();
     });
   });
@@ -406,11 +559,18 @@ async function loadWatchlist() {
       const up = quote.change >= 0;
       const cells = row.querySelectorAll("span");
       cells[1].textContent = fmtMoney(quote.price);
+      cells[1].classList.remove("skel", "skel-line", "w-60");
       cells[2].innerHTML = `<span class="trend-change ${up ? "up" : "down"}">${up ? "+" : ""}${quote.change_percent.toFixed(2)}%</span>`;
+      cells[2].classList.remove("skel", "skel-line", "w-40");
       cells[3].innerHTML = sparklineSVG(history.points.map((p) => p.c), { width: 90, height: 28 });
+      cells[3].classList.remove("skel", "skel-spark");
     } catch (err) {
       const row = table.querySelector(`[data-row="${symbol}"]`);
-      if (row) row.querySelectorAll("span")[1].textContent = "error";
+      if (row) {
+        const cell = row.querySelectorAll("span")[1];
+        cell.textContent = "error";
+        cell.classList.remove("skel", "skel-line", "w-60");
+      }
     }
   }
 }
@@ -425,6 +585,7 @@ document.getElementById("watchlistForm").addEventListener("submit", (e) => {
   if (!list.includes(symbol)) {
     list.push(symbol);
     setWatchlist(list);
+    showToast(`Added ${symbol} to watchlist`);
   }
   loadWatchlist();
 });
@@ -449,6 +610,9 @@ const SAMPLE_PROFIT = [
 async function loadPortfolio() {
   const sub = document.getElementById("portfolioSub");
   const positionsCard = document.getElementById("portfolioPositions");
+  document.getElementById("portfolioDonut").innerHTML = `<div class="skel" style="width:100%;aspect-ratio:1;border-radius:999px;max-width:260px;margin:0 auto"></div>`;
+  document.getElementById("portfolioBar").innerHTML = `<div class="skel" style="width:100%;height:180px"></div>`;
+  positionsCard.innerHTML = listRowSkeleton(5) + listRowSkeleton(5) + listRowSkeleton(5);
   try {
     const me = await fetch(`${API}/auth/me`);
     if (me.ok) {
@@ -656,7 +820,7 @@ document.getElementById("sTickers").addEventListener("keydown", (e) => {
 
 async function loadLevel2(symbol) {
   const box = document.getElementById("level2Book");
-  box.innerHTML = `<div class="empty-note">Loading…</div>`;
+  box.innerHTML = Array.from({ length: 10 }, () => listRowSkeleton(2)).join("");
   try {
     const book = await getJSON(`/public/level2?symbol=${symbol}`);
     const maxSize = Math.max(...book.bids.map((b) => b.size), ...book.asks.map((a) => a.size), 1);

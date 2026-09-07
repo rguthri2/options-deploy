@@ -22,6 +22,10 @@
         <button class="tab-btn" data-tab="scanner">Scanner</button>
         <button class="tab-btn" data-tab="level2">Level 2</button>
       </nav>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 4.5a1 1 0 0 1-1-1V2a1 1 0 1 1 2 0v1.5a1 1 0 0 1-1 1zm0 15a1 1 0 0 1 1 1V22a1 1 0 1 1-2 0v-1.5a1 1 0 0 1 1-1zm9-6.5a1 1 0 0 1-1 1h-1.5a1 1 0 1 1 0-2H20a1 1 0 0 1 1 1zm-15 0a1 1 0 0 1-1 1H3.5a1 1 0 1 1 0-2H5a1 1 0 0 1 1 1zm10.6-6.6a1 1 0 0 1 0 1.42l-1.06 1.06a1 1 0 1 1-1.42-1.42l1.06-1.06a1 1 0 0 1 1.42 0zM8.88 15.66a1 1 0 0 1 0 1.42l-1.06 1.06a1 1 0 1 1-1.42-1.42l1.06-1.06a1 1 0 0 1 1.42 0zm7.66 1.42a1 1 0 0 1-1.42 0l-1.06-1.06a1 1 0 1 1 1.42-1.42l1.06 1.06a1 1 0 0 1 0 1.42zM8.88 8.34A1 1 0 0 1 7.46 8.34L6.4 7.28a1 1 0 1 1 1.42-1.42l1.06 1.06a1 1 0 0 1 0 1.42zM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10z"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20.2 14.9a8.4 8.4 0 0 1-10.1-10 .9.9 0 0 0-1.2-1A10 10 0 1 0 21.2 16a.9.9 0 0 0-1-1.1z"/></svg>
+      </button>
       <a class="trading-link" href="trading.html">
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9z"/></svg>
         Trading
@@ -190,6 +194,44 @@
       <div class="book-grid card" id="level2Book"></div>
     </section>
   </main>
+
+  <nav class="bottom-nav" id="bottomNav">
+    <button class="bnav-btn is-active" data-tab="home">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2.7 2 11h3v10h6v-6h2v6h6V11h3z"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="bnav-btn" data-tab="watchlist">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2 9.2 8.6 2 9.2l5.5 4.7L5.8 21 12 17.3 18.2 21l-1.7-7.1L22 9.2l-7.2-.6z"/></svg>
+      <span>Watch</span>
+    </button>
+    <button class="bnav-btn" data-tab="portfolio">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M11 2v9H2a10 10 0 1 1 9 9.9V11H3.1A9 9 0 0 0 11 2zm2 0a9 9 0 0 1 8.9 9H13z"/></svg>
+      <span>Folio</span>
+    </button>
+    <button class="bnav-btn" data-tab="research">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5L20.5 19zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
+      <span>Research</span>
+    </button>
+    <button class="bnav-btn" data-tab="scanner">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 3h8v8H3zm10 0h8v5h-8zm0 7h8v11h-8zM3 13h8v8H3z"/></svg>
+      <span>Scan</span>
+    </button>
+    <button class="bnav-btn" data-tab="more">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <div class="more-sheet" id="moreSheet" hidden>
+    <div class="more-sheet-backdrop" id="moreSheetBackdrop"></div>
+    <div class="more-sheet-card">
+      <button class="bnav-btn" data-tab="news"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 4h13a2 2 0 0 1 2 2v13a1 1 0 0 0 1 1H5a1 1 0 0 1-1-1zm2 3v2h9V7zm0 4v2h9v-2zm0 4v2h6v-2z"/></svg><span>News</span></button>
+      <button class="bnav-btn" data-tab="level2"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 10h8v4H3zm10-6h8v10h-8zm0 12h8v4h-8zM3 16h8v4H3z"/></svg><span>Level 2</span></button>
+      <a class="bnav-btn" href="trading.html"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9z"/></svg><span>Trading</span></a>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
   <script src="site.js"></script>
 </body>
