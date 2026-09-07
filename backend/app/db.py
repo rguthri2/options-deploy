@@ -55,6 +55,18 @@ CREATE TABLE IF NOT EXISTS etrade_tokens (
     account_id_key TEXT,
     updated_at TEXT NOT NULL
 );
+
+-- The in-app Paper/Live toggle (see app/trading/__init__.get_broker()). Only
+-- meaningful when LIVE_TRADING_ENABLED=true on the server -- that env var
+-- remains the one switch nothing in the app can override, so a forgotten
+-- or misconfigured deployment can never accidentally enable real trading.
+-- This table just remembers which mode was picked in-app, once that server
+-- gate is already open, so you're not editing systemd files and restarting
+-- to flip between paper and live while testing.
+CREATE TABLE IF NOT EXISTS app_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    active_mode TEXT
+);
 """
 
 
@@ -106,6 +118,28 @@ def init_db(starting_cash: float) -> None:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# --- In-app Paper/Live toggle ------------------------------------------------
+
+def get_active_mode() -> Optional[str]:
+    """The in-app-selected broker mode ("paper" | "etrade"), or None if it
+    has never been set -- callers should fall back to the ACTIVE_BROKER env
+    var's default in that case."""
+    with connection() as conn:
+        row = conn.execute("SELECT active_mode FROM app_settings WHERE id = 1").fetchone()
+        return row["active_mode"] if row else None
+
+
+def set_active_mode(mode: str) -> None:
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, active_mode) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET active_mode = excluded.active_mode
+            """,
+            (mode,),
+        )
 
 
 # --- Paper account -----------------------------------------------------

@@ -14,6 +14,7 @@ Endpoints:
   GET  /api/public/screen-stocks?...        (public; criteria-based stock screener)
   GET  /api/public/level2?symbol=AAPL       (public; clearly-labeled simulated data)
   GET  /api/broker/status                   (auth required)
+  POST /api/broker/mode                     (auth required; in-app paper/live toggle)
   GET  /api/account, /api/positions         (auth required)
   GET  /api/orders, POST /api/orders        (auth required)
   POST /api/orders/{id}/cancel              (auth required)
@@ -57,7 +58,7 @@ from .serializers import (
     underlying_to_dict,
 )
 from .strategies import all_strategies, get_strategy
-from .trading import BrokerError, OrderRequest, get_broker
+from .trading import BrokerError, OrderRequest, effective_mode, get_broker
 from .trading.etrade_broker import ETradeBroker
 
 app = FastAPI(title="Options Strategy Screener", version="0.2.0")
@@ -128,8 +129,7 @@ def _parse_tickers(tickers: str) -> list[str]:
 
 
 def _is_live() -> bool:
-    settings = get_settings()
-    return settings.active_broker == "etrade" and settings.live_trading_enabled
+    return effective_mode() == "etrade"
 
 
 # --- Auth ------------------------------------------------------------------
@@ -404,7 +404,32 @@ def broker_status(username: str = Depends(require_auth)) -> dict:
         "live_trading_enabled": settings.live_trading_enabled,
         "effective_broker": "etrade" if is_live else "paper",
         "is_live": is_live,
+        # Whether the in-app toggle below can do anything: it's a no-op
+        # while the server hasn't opened LIVE_TRADING_ENABLED itself.
+        "toggle_available": settings.live_trading_enabled,
     }
+
+
+class BrokerModeBody(BaseModel):
+    mode: str  # "paper" | "etrade"
+
+
+@app.post("/api/broker/mode")
+def set_broker_mode(body: BrokerModeBody, username: str = Depends(require_auth)) -> dict:
+    if body.mode not in ("paper", "etrade"):
+        raise HTTPException(status_code=400, detail="mode must be 'paper' or 'etrade'.")
+    settings = get_settings()
+    if body.mode == "etrade" and not settings.live_trading_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Live trading is not enabled on the server. Set LIVE_TRADING_ENABLED=true "
+                "(and ACTIVE_BROKER=etrade) there first -- this in-app toggle only switches "
+                "between paper and live once the server has already allowed it."
+            ),
+        )
+    db.set_active_mode(body.mode)
+    return broker_status(username)
 
 
 def _broker_with_pending_checked():

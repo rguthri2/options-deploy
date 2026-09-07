@@ -9,6 +9,57 @@ def test_broker_status_defaults_to_paper(client):
     assert body["is_live"] is False
 
 
+def test_toggle_to_etrade_rejected_when_live_trading_disabled(client):
+    resp = client.post("/api/broker/mode", json={"mode": "etrade"})
+    assert resp.status_code == 400
+    assert "not enabled on the server" in resp.json()["detail"]
+    # Must not have flipped anything.
+    assert client.get("/api/broker/status").json()["effective_broker"] == "paper"
+
+
+def test_toggle_rejects_unknown_mode(client):
+    resp = client.post("/api/broker/mode", json={"mode": "bogus"})
+    assert resp.status_code == 400
+
+
+def test_toggle_between_paper_and_live_once_server_allows_it(client, monkeypatch):
+    monkeypatch.setenv("ACTIVE_BROKER", "paper")
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    get_settings.cache_clear()
+    try:
+        # Server opened the gate, but ACTIVE_BROKER=paper and the in-app
+        # toggle has never been touched -- still paper.
+        assert client.get("/api/broker/status").json()["effective_broker"] == "paper"
+
+        resp = client.post("/api/broker/mode", json={"mode": "etrade"})
+        assert resp.status_code == 200
+        assert resp.json()["effective_broker"] == "etrade"
+        assert client.get("/api/broker/status").json()["effective_broker"] == "etrade"
+
+        # And back to paper for testing strategies without touching the server.
+        resp = client.post("/api/broker/mode", json={"mode": "paper"})
+        assert resp.status_code == 200
+        assert resp.json()["effective_broker"] == "paper"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_toggle_forced_back_to_paper_if_server_disables_live_trading(client, monkeypatch):
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    get_settings.cache_clear()
+    client.post("/api/broker/mode", json={"mode": "etrade"})
+    assert client.get("/api/broker/status").json()["effective_broker"] == "etrade"
+
+    # Server-side gate closes again (e.g. LIVE_TRADING_ENABLED unset) -- the
+    # in-app toggle's already-stored "etrade" choice must not override that.
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        assert client.get("/api/broker/status").json()["effective_broker"] == "paper"
+    finally:
+        get_settings.cache_clear()
+
+
 def test_place_order_updates_account_and_positions(client):
     resp = client.post(
         "/api/orders",

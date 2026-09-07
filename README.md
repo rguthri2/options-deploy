@@ -222,7 +222,12 @@ requires on every individual order request (the UI's confirm-by-typing
 modal handles this for you). Getting there requires your own E*TRADE
 developer account and OAuth setup — full walkthrough, including sandbox
 testing before going live, in `backend/deploy/CYBERPANEL.md`'s
-"Auth & trading setup" section. Read `backend/app/trading/etrade_broker.py`'s
+"Auth & trading setup" section. Once `LIVE_TRADING_ENABLED=true` is set,
+a **Switch to Live / Switch to Paper** button appears next to the broker
+badge on the Trading page — that's the in-app toggle (`POST /api/broker/mode`)
+for flipping between the two while testing strategies, without editing the
+systemd unit and restarting every time. `LIVE_TRADING_ENABLED` itself stays
+the one gate the toggle can't override. Read `backend/app/trading/etrade_broker.py`'s
 module docstring first: it was built against E*TRADE's documented API but
 could not be tested end-to-end in the sandbox that built it, and it only
 supports single-leg equity orders (no options orders, no multi-leg spreads
@@ -242,6 +247,7 @@ supports single-leg equity orders (no options orders, no multi-leg spreads
 - `GET /api/public/screen-stocks?min_price=&max_price=&min_volume=&min_change_pct=&direction=either|gainers|losers&min_market_cap=&limit=` — criteria-based stock screener (all params optional); public
 - `GET /api/public/level2?symbol=AAPL` — **simulated** order-book depth (always carries `simulated: true` and a disclaimer — no free/available data source provides real Level 2 depth); public
 - `GET /api/broker/status` — which broker is active and whether live trading is enabled; auth required
+- `POST /api/broker/mode` — in-app Paper/Live toggle (`{"mode": "paper"|"etrade"}`), for flipping back and forth while testing strategies without editing env vars and restarting; only does anything once `LIVE_TRADING_ENABLED=true` is already set on the server — that env var remains the one gate the UI can never override; auth required
 - `GET /api/account`, `GET /api/positions`, `GET /api/orders` — auth required
 - `POST /api/orders` — place an order: `order_type` is `market`, `limit`, `stop`, `stop_limit`, or `trailing_stop` (with `limit_price`/`stop_price`/`trail_amount`/`trail_percent` as required per type) and `time_in_force` is `day` or `gtc` (paper by default; real E*TRADE equity orders need `confirm_live: true` — options orders aren't supported live); auth required
 - `POST /api/orders/{id}/cancel` — auth required

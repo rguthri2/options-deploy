@@ -10,6 +10,7 @@ const els = {
   app: document.getElementById("app"),
   liveBanner: document.getElementById("liveBanner"),
   brokerBadge: document.getElementById("brokerBadge"),
+  brokerModeToggle: document.getElementById("brokerModeToggle"),
   logoutBtn: document.getElementById("logoutBtn"),
 
   acctBroker: document.getElementById("acctBroker"),
@@ -206,10 +207,43 @@ async function loadBrokerStatus() {
     els.brokerBadge.textContent = body.is_live ? "LIVE" : "paper";
     els.brokerBadge.classList.toggle("live", body.is_live);
     els.liveBanner.hidden = !body.is_live;
+
+    // The toggle only does anything once the server itself has opened
+    // LIVE_TRADING_ENABLED -- otherwise it's not shown at all, so there's
+    // nothing in the UI suggesting a switch that can't actually happen.
+    els.brokerModeToggle.hidden = !body.toggle_available;
+    els.brokerModeToggle.textContent = body.is_live ? "Switch to Paper" : "Switch to Live";
   } catch (err) {
     if (err instanceof ApiError) els.brokerBadge.textContent = "unknown";
   }
 }
+
+els.brokerModeToggle.addEventListener("click", async () => {
+  const targetMode = state.isLive ? "paper" : "etrade";
+  if (targetMode === "etrade") {
+    const ok = window.confirm(
+      "Switch to LIVE trading? Orders placed from here can execute with real money at E*TRADE " +
+        "(each order still needs its own confirmation, but account/positions will show your real E*TRADE data)."
+    );
+    if (!ok) return;
+  }
+  els.brokerModeToggle.disabled = true;
+  try {
+    const { ok, data } = await apiPostJSON("/broker/mode", { mode: targetMode });
+    if (!ok) {
+      els.status.textContent = data.detail || "Could not switch broker mode.";
+      return;
+    }
+    els.status.textContent = targetMode === "etrade" ? "Switched to LIVE (E*TRADE)." : "Switched to paper trading.";
+    await loadBrokerStatus();
+    loadAccount();
+    loadOrders();
+  } catch (err) {
+    els.status.textContent = `Error: ${err.message}`;
+  } finally {
+    els.brokerModeToggle.disabled = false;
+  }
+});
 
 async function loadAccount() {
   try {
