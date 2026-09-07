@@ -34,6 +34,22 @@ const els = {
   confirmModalOk: document.getElementById("confirmModalOk"),
   confirmModalCancel: document.getElementById("confirmModalCancel"),
 
+  orderTicketModal: document.getElementById("orderTicketModal"),
+  orderTicketSummary: document.getElementById("orderTicketSummary"),
+  otQuantity: document.getElementById("otQuantity"),
+  otOrderType: document.getElementById("otOrderType"),
+  otLimitPriceRow: document.getElementById("otLimitPriceRow"),
+  otLimitPrice: document.getElementById("otLimitPrice"),
+  otStopPriceRow: document.getElementById("otStopPriceRow"),
+  otStopPrice: document.getElementById("otStopPrice"),
+  otTrailRow: document.getElementById("otTrailRow"),
+  otTrailValue: document.getElementById("otTrailValue"),
+  otTrailType: document.getElementById("otTrailType"),
+  otTif: document.getElementById("otTif"),
+  orderTicketError: document.getElementById("orderTicketError"),
+  orderTicketCancel: document.getElementById("orderTicketCancel"),
+  orderTicketSubmit: document.getElementById("orderTicketSubmit"),
+
   etradeConnectBtn: document.getElementById("etradeConnectBtn"),
   etradeVerifierRow: document.getElementById("etradeVerifierRow"),
   etradeVerifierInput: document.getElementById("etradeVerifierInput"),
@@ -45,6 +61,8 @@ const state = {
   isLive: false,
   etradeRequestToken: null,
   etradeRequestTokenSecret: null,
+  currentTicketBaseOrder: null,
+  currentTicketTriggerBtn: null,
 };
 
 // Populated fresh on every render; trade buttons reference an idea/leg
@@ -220,6 +238,25 @@ async function loadAccount() {
   }
 }
 
+function orderTypeSuffix(o) {
+  switch (o.order_type) {
+    case "limit":
+      return ` &middot; limit $${o.limit_price?.toFixed(2)}`;
+    case "stop":
+      return ` &middot; stop $${o.stop_price?.toFixed(2)}`;
+    case "stop_limit":
+      // stop_price is cleared server-side once the stop condition fires,
+      // marking it "now just a resting limit order" -- see paper_broker.py.
+      return o.stop_price != null
+        ? ` &middot; stop $${o.stop_price.toFixed(2)} / limit $${o.limit_price?.toFixed(2)}`
+        : ` &middot; triggered, limit $${o.limit_price?.toFixed(2)}`;
+    case "trailing_stop":
+      return o.trail_amount != null ? ` &middot; trail $${o.trail_amount}` : ` &middot; trail ${o.trail_percent}%`;
+    default:
+      return "";
+  }
+}
+
 async function loadOrders() {
   try {
     const body = await apiGetJSON("/orders");
@@ -229,7 +266,7 @@ async function loadOrders() {
         const cancelBtn = o.status === "pending" ? `<button class="mini-btn" data-cancel-order="${o.id}">Cancel</button>` : "";
         return `<tr>
           <td>${o.symbol}</td><td>${o.side.toUpperCase()}</td><td>${o.quantity}</td>
-          <td>${o.asset_type}${o.asset_type === "option" ? ` ${o.strike} ${o.option_type}` : ""}</td>
+          <td>${o.asset_type}${o.asset_type === "option" ? ` ${o.strike} ${o.option_type}` : ""}${orderTypeSuffix(o)}</td>
           <td class="status-${o.status}">${o.status}</td><td class="fill-cell">${fill}</td>
           <td>${cancelBtn}</td>
         </tr>`;
@@ -305,10 +342,28 @@ els.etradeCompleteBtn.addEventListener("click", async () => {
 
 // --- Placing an order from a strategy leg ------------------------------------
 
+function describeOrderType(orderBody) {
+  switch (orderBody.order_type) {
+    case "limit":
+      return ` @ limit $${orderBody.limit_price}`;
+    case "stop":
+      return ` @ stop $${orderBody.stop_price}`;
+    case "stop_limit":
+      return ` @ stop $${orderBody.stop_price} / limit $${orderBody.limit_price}`;
+    case "trailing_stop":
+      return orderBody.trail_amount ? ` trailing $${orderBody.trail_amount}` : ` trailing ${orderBody.trail_percent}%`;
+    default:
+      return "";
+  }
+}
+
 async function placeOrder(orderBody) {
   if (state.isLive) {
-    const summary = `${orderBody.side.toUpperCase()} ${orderBody.quantity} ${orderBody.symbol}` +
-      (orderBody.asset_type === "option" ? ` ${orderBody.expiration} $${orderBody.strike} ${orderBody.option_type}` : "");
+    const orderTypeLabel = orderBody.order_type.toUpperCase().replace("_", "-");
+    const summary = `${orderTypeLabel} ${orderBody.side.toUpperCase()} ${orderBody.quantity} ${orderBody.symbol}` +
+      (orderBody.asset_type === "option" ? ` ${orderBody.expiration} $${orderBody.strike} ${orderBody.option_type}` : "") +
+      describeOrderType(orderBody) +
+      ` (${orderBody.time_in_force === "gtc" ? "GTC" : "Day"})`;
     const confirmed = await confirmLiveOrder(summary);
     if (!confirmed) {
       els.status.textContent = "Live order canceled.";
@@ -322,30 +377,113 @@ async function placeOrder(orderBody) {
     els.status.textContent = data.detail || "Order failed.";
     return;
   }
-  els.status.textContent = data.status === "filled"
-    ? `Order filled: ${data.side.toUpperCase()} ${data.quantity} ${data.symbol} @ $${data.filled_price.toFixed(2)}`
-    : `Order ${data.status}: ${data.rejection_reason || ""}`;
+  if (data.status === "filled") {
+    els.status.textContent = `Order filled: ${data.side.toUpperCase()} ${data.quantity} ${data.symbol} @ $${data.filled_price.toFixed(2)}`;
+  } else if (data.status === "pending") {
+    els.status.textContent = `Order working: ${data.side.toUpperCase()} ${data.quantity} ${data.symbol}${describeOrderType(data)} -- will fill once triggered.`;
+  } else {
+    els.status.textContent = `Order ${data.status}: ${data.rejection_reason || ""}`;
+  }
   loadAccount();
   loadOrders();
 }
+
+// --- Order ticket modal (quantity, order type, TIF, per-type price fields) ----
+
+function updateOrderTicketFieldVisibility() {
+  const type = els.otOrderType.value;
+  els.otLimitPriceRow.hidden = !(type === "limit" || type === "stop_limit");
+  els.otStopPriceRow.hidden = !(type === "stop" || type === "stop_limit");
+  els.otTrailRow.hidden = type !== "trailing_stop";
+}
+els.otOrderType.addEventListener("change", updateOrderTicketFieldVisibility);
+
+function openOrderTicket(baseOrder, triggerBtn) {
+  state.currentTicketBaseOrder = baseOrder;
+  state.currentTicketTriggerBtn = triggerBtn || null;
+
+  const contractLabel = baseOrder.asset_type === "option"
+    ? `${baseOrder.expiration} $${baseOrder.strike} ${baseOrder.option_type.toUpperCase()}`
+    : "shares";
+  els.orderTicketSummary.innerHTML = `<strong>${baseOrder.side.toUpperCase()} ${baseOrder.symbol}</strong> &mdash; ${contractLabel}`;
+
+  els.otQuantity.value = baseOrder.quantity;
+  els.otOrderType.value = "market";
+  els.otLimitPrice.value = "";
+  els.otStopPrice.value = "";
+  els.otTrailValue.value = "";
+  els.otTrailType.value = "amount";
+  els.otTif.value = "day";
+  els.orderTicketError.hidden = true;
+  updateOrderTicketFieldVisibility();
+  els.orderTicketModal.hidden = false;
+}
+
+function closeOrderTicket() {
+  els.orderTicketModal.hidden = true;
+  state.currentTicketBaseOrder = null;
+  state.currentTicketTriggerBtn = null;
+}
+
+function ticketError(message) {
+  els.orderTicketError.textContent = message;
+  els.orderTicketError.hidden = false;
+}
+
+els.orderTicketCancel.addEventListener("click", closeOrderTicket);
+
+els.orderTicketSubmit.addEventListener("click", async () => {
+  const base = state.currentTicketBaseOrder;
+  if (!base) return;
+
+  const quantity = parseInt(els.otQuantity.value, 10);
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    ticketError("Enter a valid quantity.");
+    return;
+  }
+
+  const orderType = els.otOrderType.value;
+  const order = { ...base, quantity, order_type: orderType, time_in_force: els.otTif.value };
+
+  if (orderType === "limit" || orderType === "stop_limit") {
+    const limitPrice = parseFloat(els.otLimitPrice.value);
+    if (!(limitPrice > 0)) return ticketError("Enter a limit price.");
+    order.limit_price = limitPrice;
+  }
+  if (orderType === "stop" || orderType === "stop_limit") {
+    const stopPrice = parseFloat(els.otStopPrice.value);
+    if (!(stopPrice > 0)) return ticketError("Enter a stop price.");
+    order.stop_price = stopPrice;
+  }
+  if (orderType === "trailing_stop") {
+    const trailValue = parseFloat(els.otTrailValue.value);
+    if (!(trailValue > 0)) return ticketError("Enter a trail amount or percent.");
+    if (els.otTrailType.value === "percent") order.trail_percent = trailValue;
+    else order.trail_amount = trailValue;
+  }
+
+  const triggerBtn = state.currentTicketTriggerBtn;
+  closeOrderTicket();
+  if (triggerBtn) triggerBtn.disabled = true;
+  try {
+    await placeOrder(order);
+  } catch (err) {
+    // Guards against silent failures (e.g. a session expiring mid-click, or
+    // a network error) that would otherwise show nothing at all --
+    // apiFetch's own 401 handling already calls showLogin(), so this is
+    // mainly for anything unexpected.
+    els.status.textContent = `Error: ${err.message}`;
+  } finally {
+    if (triggerBtn) triggerBtn.disabled = false;
+  }
+});
 
 els.results.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-leg-index]");
   if (!btn) return;
   const order = legRegistry[Number(btn.getAttribute("data-leg-index"))];
   if (!order) return;
-  btn.disabled = true;
-  placeOrder(order)
-    .catch((err) => {
-      // Guards against silent failures (e.g. a session expiring mid-click,
-      // or a network error) that would otherwise show nothing at all --
-      // apiFetch's own 401 handling already calls showLogin(), so this is
-      // mainly for anything unexpected.
-      els.status.textContent = `Error: ${err.message}`;
-    })
-    .finally(() => {
-      btn.disabled = false;
-    });
+  openOrderTicket(order, btn);
 });
 
 // --- Strategy scan / rendering ------------------------------------------------

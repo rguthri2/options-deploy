@@ -32,8 +32,13 @@ CREATE TABLE IF NOT EXISTS orders (
     expiration TEXT,
     side TEXT NOT NULL,                -- "buy" | "sell"
     quantity INTEGER NOT NULL,
-    order_type TEXT NOT NULL,          -- "market" | "limit"
+    order_type TEXT NOT NULL,          -- "market" | "limit" | "stop" | "stop_limit" | "trailing_stop"
     limit_price REAL,
+    stop_price REAL,                   -- "stop" / "stop_limit" trigger level
+    trail_amount REAL,                 -- "trailing_stop": fixed $ trail (mutually exclusive with trail_percent)
+    trail_percent REAL,                -- "trailing_stop": % trail (mutually exclusive with trail_amount)
+    trail_reference_price REAL,        -- "trailing_stop": best price seen since placement; the trail follows this
+    time_in_force TEXT NOT NULL DEFAULT 'day',  -- "day" | "gtc"
     status TEXT NOT NULL,              -- "pending" | "filled" | "canceled" | "rejected"
     filled_price REAL,
     filled_at TEXT,
@@ -70,9 +75,30 @@ def connection():
         conn.close()
 
 
+# Columns added to `orders` after its original release. `CREATE TABLE IF NOT
+# EXISTS` never alters an existing table, so an already-deployed database
+# needs these added explicitly -- checked against PRAGMA table_info and
+# backfilled with ALTER TABLE, once, on every startup (a no-op once applied).
+_ORDER_COLUMNS_ADDED_LATER = {
+    "stop_price": "REAL",
+    "trail_amount": "REAL",
+    "trail_percent": "REAL",
+    "trail_reference_price": "REAL",
+    "time_in_force": "TEXT NOT NULL DEFAULT 'day'",
+}
+
+
+def _migrate_orders_table(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+    for column, decl in _ORDER_COLUMNS_ADDED_LATER.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE orders ADD COLUMN {column} {decl}")
+
+
 def init_db(starting_cash: float) -> None:
     with connection() as conn:
         conn.executescript(_SCHEMA)
+        _migrate_orders_table(conn)
         row = conn.execute("SELECT 1 FROM paper_account WHERE id = 1").fetchone()
         if row is None:
             conn.execute("INSERT INTO paper_account (id, cash_balance) VALUES (1, ?)", (starting_cash,))
@@ -126,6 +152,13 @@ def list_orders(broker: Optional[str] = None) -> list[sqlite3.Row]:
                 "SELECT * FROM orders WHERE broker = ? ORDER BY id DESC", (broker,)
             ).fetchall()
         return conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+
+
+def list_pending_orders(broker: str) -> list[sqlite3.Row]:
+    with connection() as conn:
+        return conn.execute(
+            "SELECT * FROM orders WHERE broker = ? AND status = 'pending' ORDER BY id ASC", (broker,)
+        ).fetchall()
 
 
 def list_filled_orders(broker: str) -> list[sqlite3.Row]:

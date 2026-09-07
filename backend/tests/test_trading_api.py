@@ -101,6 +101,91 @@ def test_etrade_auth_url_without_credentials_fails_fast_no_network_call(client):
     assert "not configured" in resp.json()["detail"].lower()
 
 
+def test_stop_order_rests_pending_until_triggered(client):
+    # AAPL is at 230 in mock mode; a buy-stop far above that hasn't triggered.
+    resp = client.post(
+        "/api/orders",
+        json={
+            "symbol": "AAPL", "asset_type": "equity", "side": "buy", "quantity": 1,
+            "order_type": "stop", "stop_price": 500.0,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert body["stop_price"] == 500.0
+    assert body["time_in_force"] == "day"
+
+    orders = client.get("/api/orders").json()["orders"]
+    assert orders[0]["status"] == "pending"
+
+
+def test_stop_order_already_marketable_fills_immediately(client):
+    # A sell-stop whose trigger the market has already reached behaves like
+    # a real broker's would: it fills right away rather than waiting.
+    client.post(
+        "/api/orders",
+        json={"symbol": "AAPL", "asset_type": "equity", "side": "buy", "quantity": 5, "order_type": "market"},
+    )
+    resp = client.post(
+        "/api/orders",
+        json={
+            "symbol": "AAPL", "asset_type": "equity", "side": "sell", "quantity": 5,
+            "order_type": "stop", "stop_price": 300.0,  # AAPL at 230 <= 300 already
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "filled"
+    assert resp.json()["filled_price"] == 230.0
+
+
+def test_stop_limit_order_via_api(client):
+    resp = client.post(
+        "/api/orders",
+        json={
+            "symbol": "AAPL", "asset_type": "equity", "side": "buy", "quantity": 1,
+            "order_type": "stop_limit", "stop_price": 500.0, "limit_price": 505.0, "time_in_force": "gtc",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert body["stop_price"] == 500.0
+    assert body["limit_price"] == 505.0
+    assert body["time_in_force"] == "gtc"
+
+
+def test_trailing_stop_order_via_api(client):
+    client.post(
+        "/api/orders",
+        json={"symbol": "AAPL", "asset_type": "equity", "side": "buy", "quantity": 2, "order_type": "market"},
+    )
+    resp = client.post(
+        "/api/orders",
+        json={
+            "symbol": "AAPL", "asset_type": "equity", "side": "sell", "quantity": 2,
+            "order_type": "trailing_stop", "trail_amount": 15.0,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert body["trail_amount"] == 15.0
+    assert body["trail_reference_price"] == 230.0  # seeded from AAPL's price at placement
+
+
+def test_trailing_stop_missing_trail_field_rejected(client):
+    resp = client.post(
+        "/api/orders",
+        json={
+            "symbol": "AAPL", "asset_type": "equity", "side": "sell", "quantity": 1,
+            "order_type": "trailing_stop",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "rejected"
+
+
 def test_option_order_via_api(client):
     screen = client.get("/api/screen", params={"ticker": "AAPL"}).json()
     call = next(c for c in screen["contracts"] if c["option_type"] == "call")

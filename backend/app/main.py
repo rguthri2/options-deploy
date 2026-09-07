@@ -29,6 +29,7 @@ the request body -- see app/trading/__init__.get_broker() and README.md.
 """
 from __future__ import annotations
 
+import asyncio
 import random
 import time
 from datetime import date
@@ -69,10 +70,45 @@ app.add_middleware(
 )
 
 
+_watcher_task: Optional[asyncio.Task] = None
+_WATCHER_INTERVAL_SECONDS = 30
+
+
+async def _stop_order_watcher_loop() -> None:
+    """Periodically fills any pending stop/stop-limit/trailing-stop paper
+    order whose trigger the market has reached, independent of whether
+    anyone is actively viewing the page (the account/positions/orders
+    routes also run this check on every request, as a lower-latency
+    complement to this loop, not a replacement for it)."""
+    while True:
+        await asyncio.sleep(_WATCHER_INTERVAL_SECONDS)
+        try:
+            get_broker().check_pending_orders()
+        except Exception:
+            # A broker that can't be constructed right now (e.g. E*TRADE not
+            # yet connected) or a transient provider error -- try again next
+            # cycle rather than taking the whole loop down.
+            pass
+
+
 @app.on_event("startup")
-def _startup() -> None:
+async def _startup() -> None:
     settings = get_settings()
     db.init_db(settings.paper_starting_cash)
+    global _watcher_task
+    _watcher_task = asyncio.create_task(_stop_order_watcher_loop())
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    global _watcher_task
+    if _watcher_task is not None:
+        _watcher_task.cancel()
+        try:
+            await _watcher_task
+        except asyncio.CancelledError:
+            pass
+        _watcher_task = None
 
 
 def _criteria_from_query(min_oi: Optional[int], min_delta: Optional[float], min_dte: Optional[int]) -> ScreeningCriteria:
@@ -371,10 +407,24 @@ def broker_status(username: str = Depends(require_auth)) -> dict:
     }
 
 
+def _broker_with_pending_checked():
+    """get_broker(), having first given it a chance to fill any pending stop/
+    stop-limit/trailing-stop order the market has since reached -- a
+    lower-latency complement to the periodic background sweep, so opening
+    the Account/Orders panel reflects a trigger immediately rather than
+    waiting up to _WATCHER_INTERVAL_SECONDS for it to show up."""
+    broker = get_broker()
+    try:
+        broker.check_pending_orders()
+    except Exception:
+        pass  # best-effort; the request below still returns whatever state is on record
+    return broker
+
+
 @app.get("/api/account")
 def get_account(username: str = Depends(require_auth)) -> dict:
     try:
-        return account_to_dict(get_broker().get_account())
+        return account_to_dict(_broker_with_pending_checked().get_account())
     except BrokerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -382,7 +432,7 @@ def get_account(username: str = Depends(require_auth)) -> dict:
 @app.get("/api/positions")
 def get_positions(username: str = Depends(require_auth)) -> dict:
     try:
-        return {"positions": [position_to_dict(p) for p in get_broker().get_positions()]}
+        return {"positions": [position_to_dict(p) for p in _broker_with_pending_checked().get_positions()]}
     except BrokerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -390,7 +440,7 @@ def get_positions(username: str = Depends(require_auth)) -> dict:
 @app.get("/api/orders")
 def list_orders(username: str = Depends(require_auth)) -> dict:
     try:
-        return {"orders": [order_to_dict(o) for o in get_broker().list_orders()]}
+        return {"orders": [order_to_dict(o) for o in _broker_with_pending_checked().list_orders()]}
     except BrokerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -400,8 +450,12 @@ class OrderBody(BaseModel):
     asset_type: str  # "equity" | "option"
     side: str  # "buy" | "sell"
     quantity: int
-    order_type: str  # "market" | "limit"
+    order_type: str  # "market" | "limit" | "stop" | "stop_limit" | "trailing_stop"
     limit_price: Optional[float] = None
+    stop_price: Optional[float] = None
+    trail_amount: Optional[float] = None
+    trail_percent: Optional[float] = None
+    time_in_force: str = "day"  # "day" | "gtc"
     option_type: Optional[str] = None
     strike: Optional[float] = None
     expiration: Optional[str] = None  # ISO date, e.g. "2026-09-25"
@@ -431,6 +485,10 @@ def place_order(body: OrderBody, username: str = Depends(require_auth)) -> dict:
         quantity=body.quantity,
         order_type=body.order_type,
         limit_price=body.limit_price,
+        stop_price=body.stop_price,
+        trail_amount=body.trail_amount,
+        trail_percent=body.trail_percent,
+        time_in_force=body.time_in_force,
         option_type=body.option_type,
         strike=body.strike,
         expiration=expiration,

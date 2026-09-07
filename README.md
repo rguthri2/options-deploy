@@ -204,6 +204,17 @@ balance and positions tracked in a local SQLite DB (`DB_PATH`, default
 `options_app.db`), with fills simulated against live quotes. No real money
 is ever at risk in this mode, and it needs no broker credentials.
 
+**Order types**: Market, Limit, Stop, Stop-Limit, and Trailing Stop (by
+fixed $ amount or %), each with Day or GTC time-in-force. Market and Limit
+fill immediately (or, for Limit, reject if not marketable — this broker
+never queues a resting limit order). Stop/Stop-Limit/Trailing Stop *do*
+rest: they're stored pending and filled once `PaperBroker.check_pending_orders()`
+sees the market cross the trigger — that sweep runs on every account/orders
+API call and on a 30-second background loop (`app/main.py`), so a trigger
+lands whether or not anyone is looking at the page. Placing an order opens
+an order ticket (quantity, order type, per-type price fields, time in
+force) rather than firing immediately.
+
 **Real order placement via E*TRADE** is implemented but gated behind two
 separate switches that must both be set (`ACTIVE_BROKER=etrade` and
 `LIVE_TRADING_ENABLED=true`), plus a `confirm_live: true` flag the API
@@ -232,6 +243,6 @@ supports single-leg equity orders (no options orders, no multi-leg spreads
 - `GET /api/public/level2?symbol=AAPL` — **simulated** order-book depth (always carries `simulated: true` and a disclaimer — no free/available data source provides real Level 2 depth); public
 - `GET /api/broker/status` — which broker is active and whether live trading is enabled; auth required
 - `GET /api/account`, `GET /api/positions`, `GET /api/orders` — auth required
-- `POST /api/orders` — place an order (paper by default; real E*TRADE orders need `confirm_live: true`); auth required
+- `POST /api/orders` — place an order: `order_type` is `market`, `limit`, `stop`, `stop_limit`, or `trailing_stop` (with `limit_price`/`stop_price`/`trail_amount`/`trail_percent` as required per type) and `time_in_force` is `day` or `gtc` (paper by default; real E*TRADE equity orders need `confirm_live: true` — options orders aren't supported live); auth required
 - `POST /api/orders/{id}/cancel` — auth required
 - `GET /api/broker/etrade/auth-url`, `POST /api/broker/etrade/complete-auth` — E*TRADE OAuth setup; auth required

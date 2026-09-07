@@ -35,3 +35,9 @@ class Broker(ABC):
     @abstractmethod
     def cancel_order(self, order_id: int) -> OrderResult:
         ...
+
+    def check_pending_orders(self) -> None:
+        """Sweep pending stop/stop-limit/trailing-stop orders and fill any
+        that have triggered against the current market. Optional -- only
+        PaperBroker needs this (a real broker's stop orders live and trigger
+        on the broker's own systems, not in this app)."""

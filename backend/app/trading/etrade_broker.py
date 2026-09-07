@@ -8,11 +8,21 @@ READ BEFORE USING WITH REAL MONEY:
     verified integration. Test extensively against E*TRADE's SANDBOX
     (ETRADE_SANDBOX=true, the default) with tiny orders before ever setting
     ETRADE_SANDBOX=false or LIVE_TRADING_ENABLED=true.
-  - Only single-leg EQUITY orders are implemented (market/limit, buy/sell).
-    Options order placement is NOT implemented: E*TRADE's options order
-    schema (OCC symbology, multi-leg spreads) is materially more complex,
-    and higher-risk to get wrong with real money -- out of scope for this
-    pass. Placing an option OrderRequest raises BrokerError.
+  - Only single-leg EQUITY orders are implemented (market/limit/stop/
+    stop-limit/trailing-stop, buy/sell, day or GTC). Options order placement
+    is NOT implemented: E*TRADE's options order schema (OCC symbology,
+    multi-leg spreads) is materially more complex, and higher-risk to get
+    wrong with real money -- out of scope for this pass. Placing an option
+    OrderRequest raises BrokerError.
+  - The stop/stop-limit/trailing-stop field names below (priceType values,
+    stopPrice carrying the trail amount/percent for a trailing stop) are
+    this build's best-effort reading of E*TRADE's documented order schema,
+    with the same "never tested end-to-end" caveat as everything else in
+    this file -- verify against E*TRADE's sandbox before trusting it with
+    real money. A stop-type order is recorded "pending" (not "filled") once
+    placed, since E*TRADE itself hasn't filled it yet either; this app does
+    not currently poll E*TRADE for a later fill, so its status here can go
+    stale until the next full order sync (not yet implemented).
   - Every E*TRADE response is parsed defensively: an unexpected shape
     raises BrokerError with the raw response body rather than guessing,
     so failures are debuggable instead of silently wrong.
@@ -40,6 +50,34 @@ _AUTHORIZE_BASE = "https://us.etrade.com/e/t/etws/authorize"
 def _raise_for_status(resp) -> None:
     if resp.status_code >= 400:
         raise BrokerError(f"E*TRADE API error {resp.status_code}: {resp.text[:1000]}")
+
+
+def _map_order_pricing(request: OrderRequest) -> tuple:
+    """Translate our OrderRequest fields into E*TRADE's priceType/orderTerm/
+    price fields. Pulled out as a pure function so the mapping can be unit
+    tested without a live session -- see the module docstring's caveat that
+    this mapping itself is unverified against real E*TRADE data."""
+    price_type = {
+        "market": "MARKET",
+        "limit": "LIMIT",
+        "stop": "STOP",
+        "stop_limit": "STOP_LIMIT",
+        "trailing_stop": "TRAILING_STOP_CNST" if request.trail_amount else "TRAILING_STOP_PRCT",
+    }[request.order_type]
+    order_term = {"day": "GOOD_FOR_DAY", "gtc": "GOOD_TILL_CANCEL"}[request.time_in_force]
+
+    price_fields: dict = {}
+    if request.order_type in ("limit", "stop_limit"):
+        price_fields["limitPrice"] = request.limit_price
+    if request.order_type in ("stop", "stop_limit"):
+        price_fields["stopPrice"] = request.stop_price
+    if request.order_type == "trailing_stop":
+        # See the module docstring: this field carries the trail
+        # amount/percent itself for a TRAILING_STOP_CNST/PRCT order, per
+        # this build's (unverified) reading of E*TRADE's schema.
+        price_fields["stopPrice"] = request.trail_amount or request.trail_percent
+
+    return price_type, order_term, price_fields
 
 
 class ETradeBroker(Broker):
@@ -163,6 +201,10 @@ class ETradeBroker(Broker):
             quantity=request.quantity,
             order_type=request.order_type,
             limit_price=request.limit_price,
+            stop_price=request.stop_price,
+            trail_amount=request.trail_amount,
+            trail_percent=request.trail_percent,
+            time_in_force=request.time_in_force,
             status="pending",
             rationale=request.rationale,
         )
@@ -171,16 +213,18 @@ class ETradeBroker(Broker):
             db.update_order(order_id, status="rejected", rejection_reason=reason)
             return row_to_order_result(db.get_order(order_id))
 
+        price_type, order_term, price_fields = _map_order_pricing(request)
+
         preview_body = {
             "orderType": "EQ",
             "clientOrderId": f"opt{order_id}{int(time.time())}",
             "Order": [
                 {
                     "allOrNone": "false",
-                    "priceType": "MARKET" if request.order_type == "market" else "LIMIT",
-                    "orderTerm": "GOOD_FOR_DAY",
+                    "priceType": price_type,
+                    "orderTerm": order_term,
                     "marketSession": "REGULAR",
-                    **({"limitPrice": request.limit_price} if request.order_type == "limit" else {}),
+                    **price_fields,
                     "Instrument": [
                         {
                             "Product": {"securityType": "EQ", "symbol": request.symbol.upper()},
@@ -214,7 +258,15 @@ class ETradeBroker(Broker):
         except (KeyError, IndexError, TypeError) as exc:
             return reject(f"Unexpected E*TRADE order response shape: {exc}")
 
-        db.update_order(order_id, status="filled", broker_order_id=broker_order_id, filled_at=db.now_iso())
+        if request.order_type in ("stop", "stop_limit", "trailing_stop"):
+            # Accepted by E*TRADE, but not filled -- a stop-type order only
+            # fills once the market reaches its trigger, which happens on
+            # E*TRADE's own systems, not synchronously in this call. There is
+            # no polling here (yet) to learn when that later happens; see the
+            # module docstring.
+            db.update_order(order_id, status="pending", broker_order_id=broker_order_id)
+        else:
+            db.update_order(order_id, status="filled", broker_order_id=broker_order_id, filled_at=db.now_iso())
         return row_to_order_result(db.get_order(order_id))
 
     def get_account(self) -> AccountSummary:

@@ -75,6 +75,8 @@ main {
   border-radius: 10px;
 }
 
+.field[hidden] { display: none; }
+
 .field {
   display: flex;
   flex-direction: column;
@@ -449,6 +451,46 @@ table.data-table th, table.data-table td {
   justify-content: flex-end;
   gap: 0.6rem;
 }
+
+/* --- Order ticket modal --- */
+
+.order-ticket-card { width: 380px; text-align: left; }
+
+.order-ticket-card .field[hidden] { display: none; }
+
+.order-ticket-card .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.7rem;
+}
+
+.order-ticket-card .field input,
+.order-ticket-card .field select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  width: 100%;
+  margin: 0;
+}
+
+.order-ticket-summary {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0 0 1rem;
+  line-height: 1.4;
+}
+
+.order-ticket-summary strong { color: var(--text); }
+
+.trail-row { display: flex; gap: 0.4rem; }
+.trail-row input { flex: 1; min-width: 0; }
+.trail-row select { width: 4.5rem; flex-shrink: 0; }
 
 /* --- E*TRADE connection panel --- */
 

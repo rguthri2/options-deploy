@@ -2,10 +2,16 @@
 configured MarketDataProvider, tracked in SQLite. No real money moves.
 
 Deliberate MVP simplifications (documented rather than hidden):
-  - Market orders fill immediately at the current quote. Limit orders fill
-    immediately if marketable at the current quote, otherwise the order is
-    rejected -- this broker does not queue resting limit orders waiting for
-    the market to move to them.
+  - Market orders fill immediately at the current quote. A *freshly placed*
+    limit order fills immediately if marketable at the current quote,
+    otherwise it is rejected outright -- this broker does not queue a
+    resting limit order waiting for the market to move to it.
+  - Stop, stop-limit, and trailing-stop orders DO rest, unlike plain limit
+    orders above: they're stored "pending" and only fill once
+    check_pending_orders() sees the market cross the trigger level. That
+    sweep runs lazily (see app/main.py's account/positions/orders routes)
+    and on a periodic background loop, so a trigger is caught whether or
+    not anyone is actively looking at the page.
   - Selling more than you currently hold is rejected outright (no short
     selling in paper mode).
   - Realized P&L is not tracked separately; a position's average cost basis
@@ -70,6 +76,21 @@ def _key_from_row(row) -> PositionKey:
     return (row["symbol"], row["asset_type"], row["option_type"], row["strike"], row["expiration"])
 
 
+def _request_from_row(row) -> OrderRequest:
+    """Reconstruct just enough of an OrderRequest from a DB row to price and
+    fill it -- used by check_pending_orders(), which only has the row."""
+    return OrderRequest(
+        symbol=row["symbol"],
+        asset_type=row["asset_type"],
+        side=row["side"],
+        quantity=row["quantity"],
+        order_type=row["order_type"],
+        option_type=row["option_type"],
+        strike=row["strike"],
+        expiration=date.fromisoformat(row["expiration"]) if row["expiration"] else None,
+    )
+
+
 _row_to_result = row_to_order_result
 
 
@@ -103,6 +124,10 @@ class PaperBroker(Broker):
             quantity=request.quantity,
             order_type=request.order_type,
             limit_price=request.limit_price,
+            stop_price=request.stop_price,
+            trail_amount=request.trail_amount,
+            trail_percent=request.trail_percent,
+            time_in_force=request.time_in_force,
             status="pending",
             rationale=request.rationale,
         )
@@ -119,6 +144,20 @@ class PaperBroker(Broker):
         except BrokerError as exc:
             return reject(str(exc))
 
+        if request.order_type == "trailing_stop":
+            # The trail needs a starting reference price to measure from;
+            # check_pending_orders() takes it from here on every sweep. It
+            # never fills at placement, even if -- by coincidence -- the
+            # math would already call it triggered.
+            db.update_order(order_id, trail_reference_price=current_price)
+            self.check_pending_orders()
+            return _row_to_result(db.get_order(order_id))
+
+        if request.order_type in ("stop", "stop_limit"):
+            # Rests until the market actually reaches the stop level.
+            self.check_pending_orders()
+            return _row_to_result(db.get_order(order_id))
+
         if request.order_type == "limit":
             marketable = (request.side == "buy" and request.limit_price >= current_price) or (
                 request.side == "sell" and request.limit_price <= current_price
@@ -133,21 +172,93 @@ class PaperBroker(Broker):
         else:
             fill_price = current_price
 
+        return self._execute_fill(order_id, request, fill_price)
+
+    def _execute_fill(self, order_id: int, request: OrderRequest, fill_price: float) -> OrderResult:
         notional = fill_price * request.quantity * request.contract_multiplier
 
         if request.side == "buy":
             cash = db.get_paper_cash_balance()
             if notional > cash:
-                return reject(f"Insufficient paper cash: need ${notional:,.2f}, have ${cash:,.2f}.")
+                db.update_order(
+                    order_id,
+                    status="rejected",
+                    rejection_reason=f"Insufficient paper cash: need ${notional:,.2f}, have ${cash:,.2f}.",
+                )
+                return _row_to_result(db.get_order(order_id))
             db.set_paper_cash_balance(cash - notional)
         else:
             held = self._held_quantity(request)
             if request.quantity > held:
-                return reject(f"Insufficient position to sell: hold {held}, tried to sell {request.quantity}.")
+                db.update_order(
+                    order_id,
+                    status="rejected",
+                    rejection_reason=f"Insufficient position to sell: hold {held}, tried to sell {request.quantity}.",
+                )
+                return _row_to_result(db.get_order(order_id))
             db.set_paper_cash_balance(db.get_paper_cash_balance() + notional)
 
         db.update_order(order_id, status="filled", filled_price=fill_price, filled_at=db.now_iso())
         return _row_to_result(db.get_order(order_id))
+
+    def check_pending_orders(self) -> None:
+        for row in db.list_pending_orders(self.name):
+            order_type = row["order_type"]
+            if order_type not in ("stop", "stop_limit", "trailing_stop"):
+                continue  # a still-pending market/limit order was already resolved synchronously at placement
+
+            request = _request_from_row(row)
+            try:
+                current_price = _current_price(self._provider, request)
+            except BrokerError:
+                continue  # can't price it right now; the next sweep will retry
+
+            # For stop_limit, stop_price is cleared once the stop condition
+            # fires -- that's this order's "already triggered, now just a
+            # resting limit order at limit_price" marker, checked every
+            # sweep from then on instead of re-testing the stop level.
+            already_triggered = order_type == "stop_limit" and row["stop_price"] is None
+
+            if not already_triggered:
+                if order_type == "trailing_stop":
+                    reference = row["trail_reference_price"]
+                    if reference is None:
+                        reference = current_price
+                    reference = (
+                        max(reference, current_price) if request.side == "sell" else min(reference, current_price)
+                    )
+                    if reference != row["trail_reference_price"]:
+                        db.update_order(row["id"], trail_reference_price=reference)
+                    trail = (
+                        row["trail_amount"]
+                        if row["trail_amount"] is not None
+                        else reference * (row["trail_percent"] / 100.0)
+                    )
+                    effective_stop = reference - trail if request.side == "sell" else reference + trail
+                else:
+                    effective_stop = row["stop_price"]
+
+                triggered = (
+                    current_price <= effective_stop if request.side == "sell" else current_price >= effective_stop
+                )
+                if not triggered:
+                    continue
+
+                if order_type == "stop_limit":
+                    db.update_order(row["id"], stop_price=None)
+
+            if order_type == "stop_limit":
+                limit_price = row["limit_price"]
+                marketable = (request.side == "buy" and limit_price >= current_price) or (
+                    request.side == "sell" and limit_price <= current_price
+                )
+                if not marketable:
+                    continue  # triggered, now resting at limit_price -- re-check next sweep
+                fill_price = limit_price
+            else:
+                fill_price = current_price
+
+            self._execute_fill(row["id"], request, fill_price)
 
     def get_positions(self) -> list[Position]:
         book: dict[PositionKey, dict] = {}
