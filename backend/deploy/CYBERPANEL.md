@@ -12,6 +12,13 @@ This box already hosts other sites on port 8000, so this app uses **port
 8005** instead (the systemd unit and steps below already reflect that). Site:
 **`options.rginvestor67.com`**.
 
+The frontend is two separate pages served by the same backend: `/` is the
+public research site (news, watchlist, portfolio preview, research, scanner,
+Level 2 -- no login), and `/trading.html` is the password-gated Trading
+module (account, orders, E*TRADE connection). No extra proxy config is
+needed for this split -- both are static files served from `frontend/` by
+the one FastAPI app.
+
 ## 1. Create a dedicated system user and pull the code
 
 ```bash

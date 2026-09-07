@@ -1,10 +1,17 @@
 # Options
 
-An options-strategy screener with order placement: it filters option chains
-down to liquid, directional contracts, surfaces trade ideas modeled on
-well-known options-trading strategies, and can place orders against a
+A trading and research website: a public site with a news feed, watchlist,
+portfolio view, stock research, an options-strategy scanner, and a simulated
+Level 2 order book, plus a password-gated **Trading module** for account
+management and order placement. The scanner filters option chains down to
+liquid, directional contracts and surfaces trade ideas modeled on well-known
+options-trading strategies; the Trading module can place orders against a
 simulated paper account or (optionally, gated behind explicit configuration
 and per-order confirmation) a real E*TRADE account.
+
+Only the Trading module (`trading.html`) requires logging in — the rest of
+the site (news, watchlist, portfolio preview, research, scanner, Level 2) is
+public, since none of it touches money or orders.
 
 **Nothing here is financial advice**, and quotes/greeks/payoff figures are
 estimates — verify everything with your broker before acting on it. The app
@@ -76,7 +83,10 @@ backend/
     create_admin.py     # generates ADMIN_USERNAME/ADMIN_PASSWORD_HASH/SECRET_KEY
   tests/               # pytest, run entirely against the mock provider + paper broker
 frontend/
-  index.html, app.js, styles.css   # vanilla JS UI, no build step
+  index.html, site.css, site.js     # public site: home, news, watchlist, portfolio,
+                                     # research, scanner, Level 2 -- no login needed
+  trading.html, styles.css, app.js  # gated Trading module: login, account, orders,
+                                     # E*TRADE connection -- the only section with a password
 ```
 
 ### Why a mock data provider?
@@ -108,9 +118,11 @@ export ADMIN_USERNAME=... ADMIN_PASSWORD_HASH='...' SECRET_KEY=... COOKIE_SECURE
 uvicorn app.main:app --reload
 ```
 
-Then open http://127.0.0.1:8000/ and log in — the FastAPI app serves the
-frontend directly, no separate server needed. Without those env vars set,
-every route except `/api/health` returns `503`.
+Then open http://127.0.0.1:8000/ — the FastAPI app serves the frontend
+directly, no separate server needed. The public site (news, watchlist,
+portfolio preview, research, scanner, Level 2) needs no login. Only the
+**Trading module** at `/trading.html` requires signing in; without the auth
+env vars set, its `/api/account`, `/api/orders`, etc. routes return `503`.
 
 By default it runs against the mock provider. For live data:
 
@@ -172,8 +184,9 @@ access and are deterministic.
 
 ## Auth & trading
 
-The whole app (everything except `/api/health`) requires logging in as a
-single admin user — there's no public signup. Set it up:
+The Trading module (account, orders, broker connection) requires logging in
+as a single admin user — there's no public signup, and no other part of the
+site is gated. Set it up:
 
 ```bash
 cd backend
@@ -207,10 +220,14 @@ supports single-leg equity orders (no options orders, no multi-leg spreads
 
 - `GET /api/health` — public
 - `POST /api/auth/login`, `POST /api/auth/logout` — public
-- `GET /api/auth/me` — auth required
-- `GET /api/strategies` — metadata for every strategy (name, attribution, description); auth required
-- `GET /api/screen?ticker=AAPL[&min_oi=&min_delta=&min_dte=]` — screened contracts for one ticker; auth required
-- `GET /api/scan?tickers=AAPL,MSFT&strategy=all|<key>[&min_oi=&min_delta=&min_dte=]` — strategy ideas per ticker; auth required
+- `GET /api/auth/me` — auth required (used to silently detect Trading-module login elsewhere on the site)
+- `GET /api/strategies` — metadata for every strategy (name, attribution, description); public
+- `GET /api/screen?ticker=AAPL[&min_oi=&min_delta=&min_dte=]` — screened contracts for one ticker; public
+- `GET /api/scan?tickers=AAPL,MSFT&strategy=all|<key>[&min_oi=&min_delta=&min_dte=]` — strategy ideas per ticker; public
+- `GET /api/public/quote?symbol=AAPL` — price, change, day range, volume, market cap; public
+- `GET /api/public/history?symbol=AAPL&range=1D|5D|1W|1M|1Y` — price history for charting; public
+- `GET /api/public/news?symbols=AAPL,MSFT` — recent headlines; public
+- `GET /api/public/level2?symbol=AAPL` — **simulated** order-book depth (always carries `simulated: true` and a disclaimer — no free/available data source provides real Level 2 depth); public
 - `GET /api/broker/status` — which broker is active and whether live trading is enabled; auth required
 - `GET /api/account`, `GET /api/positions`, `GET /api/orders` — auth required
 - `POST /api/orders` — place an order (paper by default; real E*TRADE orders need `confirm_live: true`); auth required

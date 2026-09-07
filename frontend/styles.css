@@ -15,6 +15,16 @@
 
 * { box-sizing: border-box; }
 
+.back-to-site {
+  display: inline-block;
+  margin: 0.75rem 0 0 2rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.back-to-site:hover { color: var(--accent-2); }
+
 body {
   margin: 0;
   background: var(--bg);

@@ -26,6 +26,23 @@ class MarketDataProvider(ABC):
         filter precisely -- the screener re-checks everything.
         """
 
+    def get_quote_detail(self, symbol: str) -> dict:
+        """Return a richer quote for the public research page: price, prior
+        close, day range, volume, market cap, company name. Optional --
+        default raises so a provider that doesn't support it fails loudly
+        rather than silently returning nonsense."""
+        raise ProviderError(f"{type(self).__name__} does not support quote details.")
+
+    def get_history(self, symbol: str, range_key: str) -> list[dict]:
+        """Return [{"t": iso-timestamp, "c": close_price}, ...] for one of the
+        range keys "1D", "5D", "1W", "1M", "1Y". Optional -- see get_quote_detail."""
+        raise ProviderError(f"{type(self).__name__} does not support price history.")
+
+    def get_news(self, symbols: list[str]) -> list[dict]:
+        """Return recent news items: [{"title", "publisher", "link", "published_at"}, ...].
+        Optional -- see get_quote_detail."""
+        raise ProviderError(f"{type(self).__name__} does not support news.")
+
 
 class ProviderError(RuntimeError):
     """Raised when a provider cannot fetch data (bad symbol, network error, etc.)."""

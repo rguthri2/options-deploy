@@ -133,3 +133,83 @@ class YFinanceProvider(MarketDataProvider):
                         )
                     )
         return contracts
+
+    def get_quote_detail(self, symbol: str) -> dict:
+        ticker = self._yf.Ticker(symbol)
+        try:
+            fast_info = ticker.fast_info
+            price = _safe_float(fast_info["lastPrice"])
+            previous_close = _safe_float(fast_info.get("previousClose"), price)
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(f"Could not fetch a quote for '{symbol}': {exc}") from exc
+
+        name = symbol.upper()
+        market_cap = None
+        try:
+            info = ticker.info
+            name = info.get("shortName") or info.get("longName") or name
+            market_cap = info.get("marketCap")
+        except Exception:  # noqa: BLE001 - name/market cap are nice-to-haves
+            pass
+
+        change = price - previous_close
+        change_percent = (change / previous_close * 100.0) if previous_close else 0.0
+        return {
+            "symbol": symbol.upper(),
+            "name": name,
+            "price": round(price, 2),
+            "previous_close": round(previous_close, 2),
+            "change": round(change, 2),
+            "change_percent": round(change_percent, 2),
+            "day_high": round(_safe_float(fast_info.get("dayHigh"), price), 2),
+            "day_low": round(_safe_float(fast_info.get("dayLow"), price), 2),
+            "volume": _safe_int(fast_info.get("lastVolume")),
+            "market_cap": market_cap,
+        }
+
+    def get_history(self, symbol: str, range_key: str) -> list[dict]:
+        period, interval = {
+            "1D": ("1d", "5m"),
+            "5D": ("5d", "30m"),
+            "1W": ("5d", "1h"),
+            "1M": ("1mo", "1d"),
+            "1Y": ("1y", "1wk"),
+        }.get(range_key, ("1mo", "1d"))
+        ticker = self._yf.Ticker(symbol)
+        try:
+            hist = ticker.history(period=period, interval=interval)
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(f"Could not fetch price history for '{symbol}': {exc}") from exc
+        points = []
+        for ts, row in hist.iterrows():
+            close = _safe_float(row.get("Close"), None)
+            if close is None:
+                continue
+            points.append({"t": ts.isoformat(), "c": round(close, 2)})
+        return points
+
+    def get_news(self, symbols: list[str]) -> list[dict]:
+        items: list[dict] = []
+        for symbol in symbols:
+            try:
+                raw_items = self._yf.Ticker(symbol).news or []
+            except Exception:  # noqa: BLE001 - news is best-effort
+                continue
+            for raw in raw_items[:8]:
+                content = raw.get("content", raw)  # newer yfinance nests fields under "content"
+                title = content.get("title")
+                if not title:
+                    continue
+                link = (content.get("canonicalUrl") or {}).get("url") or content.get("link") or ""
+                publisher = (content.get("provider") or {}).get("displayName") or content.get("publisher") or ""
+                published_at = content.get("pubDate") or content.get("providerPublishTime") or ""
+                items.append(
+                    {
+                        "symbol": symbol.upper(),
+                        "title": title,
+                        "publisher": publisher,
+                        "link": link,
+                        "published_at": str(published_at),
+                    }
+                )
+        return items

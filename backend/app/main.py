@@ -5,9 +5,13 @@ Endpoints:
   GET  /api/health                          (public)
   POST /api/auth/login, /api/auth/logout    (public)
   GET  /api/auth/me                         (auth required)
-  GET  /api/strategies                      (auth required)
-  GET  /api/screen?ticker=AAPL              (auth required)
-  GET  /api/scan?tickers=AAPL,MSFT&...      (auth required)
+  GET  /api/strategies                      (public)
+  GET  /api/screen?ticker=AAPL              (public)
+  GET  /api/scan?tickers=AAPL,MSFT&...      (public)
+  GET  /api/public/quote?symbol=AAPL        (public)
+  GET  /api/public/history?symbol=&range=   (public)
+  GET  /api/public/news?symbols=AAPL,MSFT   (public)
+  GET  /api/public/level2?symbol=AAPL       (public; clearly-labeled simulated data)
   GET  /api/broker/status                   (auth required)
   GET  /api/account, /api/positions         (auth required)
   GET  /api/orders, POST /api/orders        (auth required)
@@ -15,13 +19,17 @@ Endpoints:
   GET  /api/broker/etrade/auth-url          (auth required)
   POST /api/broker/etrade/complete-auth     (auth required)
 
-Trading defaults to a paper (simulated) broker. Real order placement only
-happens if BOTH ACTIVE_BROKER=etrade AND LIVE_TRADING_ENABLED=true are set,
-and even then every order requires an explicit confirm_live=true in the
-request body -- see app/trading/__init__.get_broker() and README.md.
+The screener/research/scanner endpoints are public -- they surface ideas, not
+money. Only the trading module (account, orders, broker connection) requires
+the admin login. Trading defaults to a paper (simulated) broker. Real order
+placement only happens if BOTH ACTIVE_BROKER=etrade AND LIVE_TRADING_ENABLED=true
+are set, and even then every order requires an explicit confirm_live=true in
+the request body -- see app/trading/__init__.get_broker() and README.md.
 """
 from __future__ import annotations
 
+import random
+import time
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -132,7 +140,7 @@ def health() -> dict:
 
 
 @app.get("/api/strategies")
-def list_strategies(username: str = Depends(require_auth)) -> dict:
+def list_strategies() -> dict:
     return {"strategies": [s.metadata() for s in all_strategies()]}
 
 
@@ -142,7 +150,6 @@ def screen(
     min_oi: Optional[int] = Query(None, ge=0),
     min_delta: Optional[float] = Query(None, ge=0, le=1),
     min_dte: Optional[int] = Query(None, ge=0),
-    username: str = Depends(require_auth),
 ) -> dict:
     provider = get_provider()
     criteria = _criteria_from_query(min_oi, min_delta, min_dte)
@@ -171,7 +178,6 @@ def scan(
     min_oi: Optional[int] = Query(None, ge=0),
     min_delta: Optional[float] = Query(None, ge=0, le=1),
     min_dte: Optional[int] = Query(None, ge=0),
-    username: str = Depends(require_auth),
 ) -> dict:
     provider = get_provider()
     criteria = _criteria_from_query(min_oi, min_delta, min_dte)
@@ -214,6 +220,91 @@ def scan(
             "min_days_to_expiration": criteria.min_days_to_expiration,
         },
         "results": results,
+    }
+
+
+# --- Public market data: quotes, history, news, simulated level 2 ---------------
+#
+# These back the public site's News, Watchlist, Research, and Level 2 sections.
+# None of them touch money or orders, so none require login.
+
+
+@app.get("/api/public/quote")
+def public_quote(symbol: str = Query(..., description="Ticker symbol, e.g. AAPL")) -> dict:
+    provider = get_provider()
+    try:
+        return provider.get_quote_detail(symbol.strip().upper())
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+_VALID_RANGES = {"1D", "5D", "1W", "1M", "1Y"}
+
+
+@app.get("/api/public/history")
+def public_history(
+    symbol: str = Query(..., description="Ticker symbol, e.g. AAPL"),
+    range: str = Query("1M", description="One of 1D, 5D, 1W, 1M, 1Y"),
+) -> dict:
+    range_key = range.strip().upper()
+    if range_key not in _VALID_RANGES:
+        raise HTTPException(status_code=400, detail=f"range must be one of {sorted(_VALID_RANGES)}")
+    provider = get_provider()
+    try:
+        points = provider.get_history(symbol.strip().upper(), range_key)
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"symbol": symbol.strip().upper(), "range": range_key, "points": points}
+
+
+@app.get("/api/public/news")
+def public_news(symbols: str = Query("AAPL,MSFT,NVDA,TSLA,SPY", description="Comma-separated ticker symbols")) -> dict:
+    provider = get_provider()
+    try:
+        items = provider.get_news(_parse_tickers(symbols))
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    items.sort(key=lambda item: item.get("published_at", ""), reverse=True)
+    return {"items": items}
+
+
+@app.get("/api/public/level2")
+def public_level2(symbol: str = Query(..., description="Ticker symbol, e.g. AAPL")) -> dict:
+    """A synthetic order book, clearly labeled as simulated.
+
+    Real level 2 / market depth data requires a paid direct-exchange feed
+    (e.g. Nasdaq TotalView, CBOE) that this app does not have access to --
+    yfinance and other free sources do not provide it. Rather than pretend
+    otherwise, this generates a plausible-looking book around the live quote
+    for demo purposes, and every caller must surface `simulated: true`.
+    """
+    provider = get_provider()
+    try:
+        quote = provider.get_quote_detail(symbol.strip().upper())
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    price = quote["price"]
+    tick = max(0.01, round(price * 0.0005, 2))
+    rng = random.Random(f"{symbol.upper()}:{int(time.time() // 5)}")
+
+    def ladder(direction: int) -> list[dict]:
+        levels = []
+        p = price
+        for i in range(10):
+            p = round(p + direction * tick * (1 + i * rng.uniform(0.8, 1.3)), 2)
+            levels.append({"price": max(0.01, p), "size": rng.randint(1, 50) * 100})
+        return levels
+
+    return {
+        "symbol": symbol.strip().upper(),
+        "simulated": True,
+        "disclaimer": (
+            "Simulated data for demonstration only. Real Level 2 / market-depth "
+            "data requires a paid exchange feed this app does not subscribe to."
+        ),
+        "bids": ladder(-1),
+        "asks": ladder(1),
     }
 
 

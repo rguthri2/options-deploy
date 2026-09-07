@@ -3,140 +3,194 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Options Strategy Screener</title>
-  <link rel="stylesheet" href="styles.css" />
+  <title>RGInvestor — Markets, News &amp; Research</title>
+  <link rel="stylesheet" href="site.css" />
 </head>
 <body>
-  <div id="loginOverlay" class="login-overlay">
-    <form id="loginForm" class="login-card">
-      <h2>Sign in</h2>
-      <div id="loginError" class="login-error" hidden></div>
-      <div class="field">
-        <label for="loginUsername">Username</label>
-        <input id="loginUsername" type="text" autocomplete="username" required />
-      </div>
-      <div class="field">
-        <label for="loginPassword">Password</label>
-        <div class="password-row">
-          <input id="loginPassword" type="password" autocomplete="current-password" required />
-          <button type="button" id="loginPasswordToggle" class="secondary password-toggle">Show</button>
-        </div>
-      </div>
-      <button class="primary" type="submit">Sign in</button>
-    </form>
-  </div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark">RG</span>
+        <span class="brand-name">RGInvestor</span>
+      </a>
+      <nav class="tabs" id="tabs">
+        <button class="tab-btn is-active" data-tab="home">Home</button>
+        <button class="tab-btn" data-tab="news">News</button>
+        <button class="tab-btn" data-tab="watchlist">Watchlist</button>
+        <button class="tab-btn" data-tab="portfolio">Portfolio</button>
+        <button class="tab-btn" data-tab="research">Research</button>
+        <button class="tab-btn" data-tab="scanner">Scanner</button>
+        <button class="tab-btn" data-tab="level2">Level 2</button>
+      </nav>
+      <a class="trading-link" href="trading.html">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9z"/></svg>
+        Trading
+      </a>
+    </div>
+  </header>
 
-  <div id="app" hidden>
-    <div id="liveBanner" class="live-banner" hidden>
-      LIVE TRADING IS ENABLED &mdash; orders placed below execute with real money.
+  <main class="site-main">
+    <div class="disclaimer-strip">
+      <strong>Not financial advice.</strong> Research, education, and demo tooling only. Market data may be delayed or approximate.
+      Order placement lives behind the password-protected Trading module.
     </div>
 
-    <header>
-      <div class="header-row">
-        <div>
-          <h1>Options Strategy Screener</h1>
-          <p class="subtitle">Screen liquid, directional option contracts and surface ideas modeled on well-known options-trading strategies.</p>
-        </div>
-        <div class="header-actions">
-          <span id="brokerBadge" class="badge-broker">paper</span>
-          <button id="logoutBtn" class="secondary">Log out</button>
+    <!-- ============ HOME ============ -->
+    <section class="tab-panel is-active" data-panel="home">
+      <div class="hero-card">
+        <div class="hero-text">
+          <p class="eyebrow">Welcome back</p>
+          <h1>Your markets, at a glance.</h1>
+          <p class="hero-sub">Track news, watch your favorite tickers, research a name, and scan for options ideas — all in one place.</p>
         </div>
       </div>
-    </header>
 
-    <div class="disclaimer">
-      <strong>Not financial advice.</strong> This tool is for research/education only. Data, greeks, and payoff
-      estimates are approximations &mdash; verify with your broker before trading. Order placement defaults to a
-      simulated paper account; real order placement requires explicit configuration and confirmation.
-    </div>
+      <div class="section-row">
+        <h2>Top trending</h2>
+        <span class="muted-note">Live quotes</span>
+      </div>
+      <div class="trend-grid" id="trendGrid"></div>
 
-    <main>
-      <section class="panel-grid">
-        <div class="panel" id="accountPanel">
-          <h2>Account</h2>
-          <div class="stat-row" id="accountStats">
-            <div class="stat"><span class="label">Broker</span><span class="value" id="acctBroker">&ndash;</span></div>
-            <div class="stat"><span class="label">Cash</span><span class="value" id="acctCash">&ndash;</span></div>
-            <div class="stat"><span class="label">Positions value</span><span class="value" id="acctPositionsValue">&ndash;</span></div>
-            <div class="stat"><span class="label">Portfolio value</span><span class="value" id="acctPortfolio">&ndash;</span></div>
+      <div class="section-row">
+        <h2>Latest news</h2>
+        <button class="link-btn" data-goto="news">See all</button>
+      </div>
+      <div class="news-grid" id="homeNewsGrid"></div>
+    </section>
+
+    <!-- ============ NEWS ============ -->
+    <section class="tab-panel" data-panel="news">
+      <div class="panel-heading">
+        <h1>News feed</h1>
+        <p class="panel-sub">Recent headlines for the tickers you follow.</p>
+      </div>
+      <div class="news-grid" id="newsGrid"></div>
+    </section>
+
+    <!-- ============ WATCHLIST ============ -->
+    <section class="tab-panel" data-panel="watchlist">
+      <div class="panel-heading">
+        <h1>Watchlist</h1>
+        <p class="panel-sub">Saved locally in your browser — add any ticker to track it.</p>
+      </div>
+      <form class="inline-form" id="watchlistForm">
+        <input id="watchlistInput" type="text" placeholder="Add ticker (e.g. AMD)" autocomplete="off" />
+        <button class="btn-primary" type="submit">Add</button>
+      </form>
+      <div class="list-card" id="watchlistTable"></div>
+    </section>
+
+    <!-- ============ PORTFOLIO ============ -->
+    <section class="tab-panel" data-panel="portfolio">
+      <div class="panel-heading">
+        <h1>Portfolio</h1>
+        <p class="panel-sub" id="portfolioSub">Sample data — log in to the Trading module to see your real account.</p>
+      </div>
+      <div class="portfolio-grid">
+        <div class="card chart-card">
+          <div class="card-head">
+            <span class="card-title">My stocks</span>
+            <span class="card-value" id="portfolioTotal">$0.00</span>
           </div>
-          <table class="data-table" id="positionsTable">
-            <thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>Avg cost</th><th>Current</th><th>Unrealized P/L</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <div class="donut-wrap" id="portfolioDonut"></div>
         </div>
-
-        <div class="panel" id="ordersPanel">
-          <h2>Orders</h2>
-          <table class="data-table" id="ordersTable">
-            <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Type</th><th>Status</th><th>Fill</th><th></th></tr></thead>
-            <tbody></tbody>
-          </table>
+        <div class="card chart-card">
+          <div class="card-head">
+            <span class="card-title">Profit statistics</span>
+          </div>
+          <div class="bar-wrap" id="portfolioBar"></div>
         </div>
-      </section>
+      </div>
+      <div class="list-card" id="portfolioPositions"></div>
+    </section>
 
-      <section class="panel" id="etradePanel">
-        <h2>E*TRADE Connection</h2>
-        <p class="etrade-hint">
-          Connect once so real order placement is possible when
-          <code>ACTIVE_BROKER=etrade</code> and <code>LIVE_TRADING_ENABLED=true</code>
-          are set on the server. Connecting alone does not enable live trading --
-          those are separate, server-side-only switches.
-        </p>
-        <div class="etrade-controls">
-          <button id="etradeConnectBtn" class="secondary">Connect E*TRADE</button>
-          <div id="etradeVerifierRow" class="etrade-verifier-row" hidden>
-            <input id="etradeVerifierInput" type="text" placeholder="Verifier code from E*TRADE" autocomplete="off" />
-            <button id="etradeCompleteBtn" class="primary">Complete Connection</button>
+    <!-- ============ RESEARCH ============ -->
+    <section class="tab-panel" data-panel="research">
+      <div class="panel-heading">
+        <h1>Stock research</h1>
+        <p class="panel-sub">Look up a ticker for price history and key stats.</p>
+      </div>
+      <form class="inline-form" id="researchForm">
+        <input id="researchInput" type="text" placeholder="Ticker (e.g. AAPL)" autocomplete="off" value="AAPL" />
+        <button class="btn-primary" type="submit">Search</button>
+      </form>
+
+      <div class="research-card card" id="researchCard" hidden>
+        <div class="research-head">
+          <div>
+            <div class="research-symbol" id="researchSymbol">—</div>
+            <div class="research-name" id="researchName">—</div>
+          </div>
+          <div class="research-price-block">
+            <div class="research-price" id="researchPrice">—</div>
+            <div class="research-change" id="researchChange">—</div>
           </div>
         </div>
-        <div id="etradeStatus" class="etrade-status"></div>
-      </section>
+        <div class="range-tabs" id="rangeTabs">
+          <button class="range-btn is-active" data-range="1D">1D</button>
+          <button class="range-btn" data-range="5D">5D</button>
+          <button class="range-btn" data-range="1W">1W</button>
+          <button class="range-btn" data-range="1M">1M</button>
+          <button class="range-btn" data-range="1Y">1Y</button>
+        </div>
+        <div class="line-chart-wrap" id="researchChart"></div>
+        <div class="stat-grid" id="researchStats"></div>
+      </div>
+      <div id="researchStatus" class="status-line"></div>
+    </section>
 
-      <div class="controls">
+    <!-- ============ SCANNER ============ -->
+    <section class="tab-panel" data-panel="scanner">
+      <div class="panel-heading">
+        <h1>Options scanner</h1>
+        <p class="panel-sub">Screens liquid, directional contracts and surfaces ideas modeled on well-known options-trading strategies. Read-only here — place trades in the Trading module.</p>
+      </div>
+      <div class="controls" id="scannerControls">
         <div class="field tickers">
-          <label for="tickers">Tickers (comma-separated)</label>
-          <input id="tickers" type="text" value="AAPL,MSFT,NVDA,TSLA,SPY" />
+          <label for="sTickers">Tickers (comma-separated)</label>
+          <input id="sTickers" type="text" value="AAPL,MSFT,NVDA,TSLA,SPY" />
         </div>
         <div class="field">
-          <label for="strategy">Strategy</label>
-          <select id="strategy">
+          <label for="sStrategy">Strategy</label>
+          <select id="sStrategy">
             <option value="all">All strategies</option>
           </select>
         </div>
         <div class="field">
-          <label for="minOi">Min open interest</label>
-          <input id="minOi" type="number" min="0" value="100" />
+          <label for="sMinOi">Min open interest</label>
+          <input id="sMinOi" type="number" min="0" value="100" />
         </div>
         <div class="field">
-          <label for="minDelta">Min |delta|</label>
-          <input id="minDelta" type="number" min="0" max="1" step="0.05" value="0.4" />
+          <label for="sMinDelta">Min |delta|</label>
+          <input id="sMinDelta" type="number" min="0" max="1" step="0.05" value="0.4" />
         </div>
         <div class="field">
-          <label for="minDte">Min days to expiration</label>
-          <input id="minDte" type="number" min="0" value="14" />
+          <label for="sMinDte">Min days to expiration</label>
+          <input id="sMinDte" type="number" min="0" value="14" />
         </div>
-        <button class="primary" id="scanBtn">Scan</button>
+        <button class="btn-primary" id="sScanBtn">Scan</button>
       </div>
+      <div id="scannerStatus" class="status-line"></div>
+      <div id="scannerResults"></div>
+    </section>
 
-      <div id="status"></div>
-      <div id="results"></div>
-    </main>
-  </div>
-
-  <div id="confirmModal" class="modal-overlay" hidden>
-    <div class="modal-card">
-      <h3>Confirm live order</h3>
-      <p id="confirmModalBody"></p>
-      <p>Type <strong>CONFIRM</strong> to place this real order.</p>
-      <input id="confirmModalInput" type="text" autocomplete="off" />
-      <div class="modal-actions">
-        <button id="confirmModalCancel" class="secondary">Cancel</button>
-        <button id="confirmModalOk" class="primary danger">Place real order</button>
+    <!-- ============ LEVEL 2 ============ -->
+    <section class="tab-panel" data-panel="level2">
+      <div class="panel-heading">
+        <h1>Level 2 market data</h1>
+        <p class="panel-sub">Order-book depth by price level.</p>
       </div>
-    </div>
-  </div>
+      <div class="sim-banner">
+        SIMULATED / DEMO DATA — real Level 2 depth requires a paid exchange feed this app does not subscribe to. Numbers below are generated for illustration only.
+      </div>
+      <form class="inline-form" id="level2Form">
+        <input id="level2Input" type="text" placeholder="Ticker (e.g. AAPL)" autocomplete="off" value="AAPL" />
+        <button class="btn-primary" type="submit">Load book</button>
+      </form>
+      <div class="book-grid card" id="level2Book"></div>
+    </section>
+  </main>
 
-  <script src="app.js"></script>
+  <script src="site.js"></script>
 </body>
 </html>

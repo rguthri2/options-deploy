@@ -10,10 +10,21 @@ screener and strategy scans have something realistic to filter.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+import random
+from datetime import date, datetime, timedelta, timezone
 
 from ..models import OptionContract, OptionType, Underlying
 from .base import MarketDataProvider, ProviderError
+
+_COMPANY_NAMES: dict[str, str] = {
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "NVDA": "NVIDIA Corporation",
+    "TSLA": "Tesla, Inc.",
+    "SPY": "SPDR S&P 500 ETF Trust",
+}
+
+_RANGE_POINTS: dict[str, int] = {"1D": 26, "5D": 30, "1W": 30, "1M": 22, "1Y": 52}
 
 # symbol -> (spot price, dividend yield, base implied volatility)
 _TICKER_PROFILES: dict[str, tuple[float, float, float]] = {
@@ -116,3 +127,71 @@ class MockProvider(MarketDataProvider):
             today = date.today()
             chain = [c for c in chain if (c.expiration - today).days >= min_days_to_expiration]
         return chain
+
+    def get_quote_detail(self, symbol: str) -> dict:
+        underlying = self.get_underlying(symbol)
+        rng = random.Random(symbol.upper())
+        previous_close = round(underlying.price * (1 + rng.uniform(-0.02, 0.02)), 2)
+        change = round(underlying.price - previous_close, 2)
+        change_percent = round((change / previous_close * 100.0) if previous_close else 0.0, 2)
+        return {
+            "symbol": underlying.symbol,
+            "name": _COMPANY_NAMES.get(underlying.symbol, underlying.symbol),
+            "price": underlying.price,
+            "previous_close": previous_close,
+            "change": change,
+            "change_percent": change_percent,
+            "day_high": round(underlying.price * 1.01, 2),
+            "day_low": round(underlying.price * 0.99, 2),
+            "volume": rng.randint(2_000_000, 60_000_000),
+            "market_cap": None,
+        }
+
+    def get_history(self, symbol: str, range_key: str) -> list[dict]:
+        underlying = self.get_underlying(symbol)
+        n_points = _RANGE_POINTS.get(range_key, 22)
+        rng = random.Random(f"{symbol.upper()}:{range_key}")
+        price = underlying.price * rng.uniform(0.92, 1.0)
+        now = datetime.now(timezone.utc)
+        step = {
+            "1D": timedelta(minutes=15),
+            "5D": timedelta(hours=2),
+            "1W": timedelta(hours=6),
+            "1M": timedelta(days=1),
+            "1Y": timedelta(weeks=1),
+        }.get(range_key, timedelta(days=1))
+
+        points = []
+        for i in range(n_points):
+            price *= 1 + rng.uniform(-0.015, 0.016)
+            ts = now - step * (n_points - 1 - i)
+            points.append({"t": ts.isoformat(), "c": round(price, 2)})
+        # Nudge the last point to land on the "current" quote so the chart
+        # ends where the rest of the UI says the price is.
+        if points:
+            points[-1]["c"] = underlying.price
+        return points
+
+    def get_news(self, symbols: list[str]) -> list[dict]:
+        headlines = [
+            "shares active in early trading as options volume picks up",
+            "analysts weigh in ahead of next earnings report",
+            "options market pricing in elevated volatility",
+            "trading desks watch key technical level closely",
+            "volume surges on heavier-than-usual options activity",
+        ]
+        now = datetime.now(timezone.utc)
+        items = []
+        for i, symbol in enumerate(symbols):
+            rng = random.Random(f"news:{symbol.upper()}")
+            name = _COMPANY_NAMES.get(symbol.upper(), symbol.upper())
+            items.append(
+                {
+                    "symbol": symbol.upper(),
+                    "title": f"{name} ({symbol.upper()}) {rng.choice(headlines)}",
+                    "publisher": "Sample Market Wire (demo data)",
+                    "link": "",
+                    "published_at": (now - timedelta(hours=i * 3 + 1)).isoformat(),
+                }
+            )
+        return items
