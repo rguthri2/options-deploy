@@ -130,7 +130,41 @@ def test_bear_put_spread_is_defined_risk(screened_aapl):
 def test_poor_mans_covered_call_uses_two_expirations(screened_aapl):
     underlying, contracts = screened_aapl
     ideas = get_strategy("poor_mans_covered_call").scan("AAPL", underlying, contracts)
+    assert ideas
     for idea in ideas:
         long_leg, short_leg = idea.legs
         assert long_leg.contract.expiration > short_leg.contract.expiration
         assert long_leg.contract.strike < short_leg.contract.strike
+        # Regression: a diagonal that costs more than its strike width can
+        # ever pay back (a sufficiently deep-ITM LEAPS leg is nearly all
+        # intrinsic value) must never be surfaced as a profitable "idea" --
+        # see the missing-guard bug this test was added for.
+        assert idea.max_profit > 0
+        assert idea.max_loss > 0
+
+
+def test_poor_mans_covered_call_rejects_unprofitable_pairing():
+    """A long leg priced above the strike width it's paired against (mostly
+    intrinsic value from being deep enough ITM) must be filtered out rather
+    than reported with a nonsensical negative max_profit."""
+    from datetime import date, timedelta
+
+    from app.models import OptionContract, OptionType, Underlying
+
+    near = date.today() + timedelta(days=30)
+    far = date.today() + timedelta(days=700)
+    underlying = Underlying(symbol="TEST", price=500.0)
+    contracts = [
+        OptionContract(
+            symbol="TEST", option_type=OptionType.CALL, strike=200.0, expiration=far,
+            bid=295.0, ask=296.05, last_price=295.5, open_interest=500,
+            implied_volatility=0.3, delta=0.93,
+        ),
+        OptionContract(
+            symbol="TEST", option_type=OptionType.CALL, strike=485.0, expiration=near,
+            bid=0.0, ask=1.0, last_price=0.5, open_interest=500,
+            implied_volatility=0.3, delta=0.68,
+        ),
+    ]
+    ideas = get_strategy("poor_mans_covered_call").scan("TEST", underlying, contracts)
+    assert ideas == []

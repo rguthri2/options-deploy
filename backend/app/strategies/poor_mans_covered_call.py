@@ -45,6 +45,13 @@ class PoorMansCoveredCallStrategy(Strategy):
                 # LEAPS leg's remaining time value as roughly unchanged -- the
                 # standard simplified way this diagonal is quoted.
                 max_profit_est = round(width * 100 - net_cost * 100, 2)
+                if max_profit_est <= 0:
+                    # A sufficiently deep-ITM long leg can cost more than the
+                    # strike width can ever pay back (mostly intrinsic value,
+                    # bought above the spread's own ceiling) -- not a real
+                    # "idea," just noise. bull_call_spread.py guards the same
+                    # way; this strategy was missing the equivalent check.
+                    continue
                 max_loss_est = round(net_cost * 100, 2)
                 breakeven_est = round(long_leg.strike + net_cost, 2)
 
