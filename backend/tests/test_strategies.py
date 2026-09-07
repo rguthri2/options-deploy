@@ -78,6 +78,34 @@ def test_long_call_and_long_put(screened_aapl):
     assert put_ideas[0].max_profit is not None and put_ideas[0].max_profit > 0
 
 
+def test_long_call_and_long_put_pick_contracts_near_the_delta_floor(screened_aapl):
+    """Regression test: these strategies must favor the *cheapest* qualifying
+    contract (delta closest to the 0.4 screening floor), not the deepest,
+    most expensive in-the-money one -- the whole "stock replacement, for a
+    fraction of the capital" pitch breaks if a strike far past the
+    underlying's price gets picked instead (e.g. a $700 put recommended
+    against a $524 stock, paying ~$176 of pure intrinsic value)."""
+    underlying, contracts = screened_aapl
+    from app.strategies.base import calls, puts
+
+    qualifying_calls = calls(contracts)
+    qualifying_puts = puts(contracts)
+    min_call_delta = min(c.delta for c in qualifying_calls)
+    min_put_abs_delta = min(abs(c.delta) for c in qualifying_puts)
+
+    call_ideas = get_strategy("long_call").scan("AAPL", underlying, contracts)
+    put_ideas = get_strategy("long_put").scan("AAPL", underlying, contracts)
+
+    top_call = call_ideas[0].legs[0].contract
+    top_put = put_ideas[0].legs[0].contract
+    assert top_call.delta == pytest.approx(min_call_delta)
+    assert abs(top_put.delta) == pytest.approx(min_put_abs_delta)
+    # Also sanity-check the strike is reasonably near the stock's price,
+    # not off in deep-ITM territory.
+    assert abs(top_call.strike - underlying.price) < underlying.price
+    assert abs(top_put.strike - underlying.price) < underlying.price
+
+
 def test_bull_call_spread_is_defined_risk(screened_aapl):
     underlying, contracts = screened_aapl
     ideas = get_strategy("bull_call_spread").scan("AAPL", underlying, contracts)

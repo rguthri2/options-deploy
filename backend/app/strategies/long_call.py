@@ -17,7 +17,12 @@ class LongCallStrategy(Strategy):
     )
 
     def scan(self, symbol: str, underlying: Underlying, screened_contracts: list[OptionContract]) -> list[StrategyIdea]:
-        candidates = sorted(calls(screened_contracts), key=lambda c: c.delta, reverse=True)
+        # Ascending delta so the contract *closest* to the 0.4 screening
+        # threshold comes first -- see the matching comment in long_put.py.
+        # Descending picked the deepest-ITM (most expensive, delta near 1)
+        # contract in the chain, which could be far past the underlying's
+        # price and cost nearly as much as 100 shares outright.
+        candidates = sorted(calls(screened_contracts), key=lambda c: c.delta)
         ideas: list[StrategyIdea] = []
         seen: set = set()
         for call in candidates:

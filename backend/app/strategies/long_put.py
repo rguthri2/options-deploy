@@ -18,7 +18,14 @@ class LongPutStrategy(Strategy):
     )
 
     def scan(self, symbol: str, underlying: Underlying, screened_contracts: list[OptionContract]) -> list[StrategyIdea]:
-        candidates = sorted(puts(screened_contracts), key=lambda c: abs(c.delta), reverse=True)
+        # Ascending |delta| so the contract *closest* to the 0.4 screening
+        # threshold comes first -- enough delta to track the stock, without
+        # paying near-full intrinsic value for a needlessly deep-ITM strike
+        # (a strike far past the underlying's price is barely cheaper than
+        # shorting the stock outright, which defeats "for a fraction of the
+        # capital" below). Sorting the other way was the bug: it surfaced the
+        # most extreme, most expensive contract in the chain first.
+        candidates = sorted(puts(screened_contracts), key=lambda c: abs(c.delta))
         ideas: list[StrategyIdea] = []
         seen: set = set()
         for put in candidates:
