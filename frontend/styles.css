@@ -148,7 +148,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 
 .idea-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 1rem;
   padding: 1.2rem;
 }
@@ -158,6 +158,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
+  min-width: 0;
 }
 
 .idea-card .strategy-name {
@@ -369,6 +370,8 @@ button.primary.danger { background: var(--loss); color: #2a0a0a; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem 1.2rem;
+  min-width: 0; /* let a grid item shrink below its content's intrinsic
+                   width (e.g. a nowrap table) instead of overflowing */
 }
 
 .panel h2 { margin: 0 0 0.8rem; font-size: 1rem; }
@@ -494,4 +497,57 @@ table.data-table th, table.data-table td {
   margin-top: 0.6rem;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+/* --- Mobile --- */
+
+@media (max-width: 640px) {
+  .back-to-site { margin: 0.6rem 0 0 1rem; }
+
+  header { padding: 1.1rem 1rem 0.8rem; }
+  header h1 { font-size: 1.2rem; }
+
+  .header-row { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+  .header-actions { justify-content: space-between; }
+
+  .disclaimer { margin: 0.8rem 1rem 0; font-size: 0.8rem; }
+
+  main { padding: 0 1rem; }
+
+  .controls { flex-direction: column; align-items: stretch; }
+  .field, .field.tickers { width: 100%; }
+  .field input, .field select, .field.tickers input { min-width: 0; width: 100%; }
+  .controls button.primary { width: 100%; }
+
+  .ticker-header { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+
+  .idea-grid { padding: 0.8rem; gap: 0.8rem; }
+
+  /* Wide tables scroll horizontally within their own box instead of
+     forcing the whole page to scroll sideways. legs-table is excluded --
+     it holds the Trade button, the one thing on this page that must never
+     need a horizontal swipe to reach, so it wraps its text instead. */
+  table.data-table, table.contracts-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .legs-table th, .legs-table td { white-space: normal; }
+  .legs-table .mini-btn { white-space: nowrap; }
+
+  .stat-row { gap: 0.5rem 0.8rem; }
+
+  .panel { padding: 0.9rem; }
+  .panel-grid { margin: 1rem 0; }
+
+  .etrade-controls { flex-direction: column; align-items: stretch; }
+  .etrade-verifier-row { flex-direction: column; }
+  .etrade-verifier-row input { min-width: 0; width: 100%; }
+  .etrade-controls button, .etrade-verifier-row button { width: 100%; }
+
+  .login-overlay, .modal-overlay { padding: 1rem; }
+  .login-card, .modal-card { width: 100%; max-width: 340px; }
+
+  .password-row { flex-wrap: wrap; }
 }
