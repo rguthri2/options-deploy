@@ -14,6 +14,7 @@ import random
 from datetime import date, datetime, timedelta, timezone
 
 from ..models import OptionContract, OptionType, Underlying
+from ..stock_screener import StockScreenCriteria, filter_and_rank
 from .base import MarketDataProvider, ProviderError
 
 _COMPANY_NAMES: dict[str, str] = {
@@ -22,6 +23,12 @@ _COMPANY_NAMES: dict[str, str] = {
     "NVDA": "NVIDIA Corporation",
     "TSLA": "Tesla, Inc.",
     "SPY": "SPDR S&P 500 ETF Trust",
+    "GOOGL": "Alphabet Inc.",
+    "AMZN": "Amazon.com, Inc.",
+    "META": "Meta Platforms, Inc.",
+    "AMD": "Advanced Micro Devices, Inc.",
+    "NFLX": "Netflix, Inc.",
+    "JPM": "JPMorgan Chase & Co.",
 }
 
 _RANGE_POINTS: dict[str, int] = {"1D": 26, "5D": 30, "1W": 30, "1M": 22, "1Y": 52}
@@ -33,6 +40,28 @@ _TICKER_PROFILES: dict[str, tuple[float, float, float]] = {
     "NVDA": (135.00, 0.0003, 0.55),
     "TSLA": (250.00, 0.0, 0.60),
     "SPY": (560.00, 0.013, 0.15),
+    "GOOGL": (175.00, 0.005, 0.30),
+    "AMZN": (185.00, 0.0, 0.32),
+    "META": (580.00, 0.003, 0.35),
+    "AMD": (145.00, 0.0, 0.45),
+    "NFLX": (700.00, 0.0, 0.35),
+    "JPM": (215.00, 0.021, 0.22),
+}
+
+# symbol -> approximate market cap in dollars, for testing `min_market_cap`
+# filtering offline. SPY is an ETF (no market cap) -- left out on purpose so
+# screening exercises the "unknown market cap" exclusion path too.
+_MARKET_CAPS: dict[str, float] = {
+    "AAPL": 3.4e12,
+    "MSFT": 3.1e12,
+    "NVDA": 3.3e12,
+    "TSLA": 0.8e12,
+    "GOOGL": 2.2e12,
+    "AMZN": 2.0e12,
+    "META": 1.4e12,
+    "AMD": 0.25e12,
+    "NFLX": 0.3e12,
+    "JPM": 0.65e12,
 }
 
 # Days-to-expiration cycles offered per symbol. One is deliberately < 14 days
@@ -144,8 +173,12 @@ class MockProvider(MarketDataProvider):
             "day_high": round(underlying.price * 1.01, 2),
             "day_low": round(underlying.price * 0.99, 2),
             "volume": rng.randint(2_000_000, 60_000_000),
-            "market_cap": None,
+            "market_cap": _MARKET_CAPS.get(underlying.symbol),
         }
+
+    def screen_stocks(self, criteria: StockScreenCriteria) -> list[dict]:
+        quotes = [self.get_quote_detail(symbol) for symbol in sorted(_TICKER_PROFILES)]
+        return filter_and_rank(quotes, criteria)
 
     def get_history(self, symbol: str, range_key: str) -> list[dict]:
         underlying = self.get_underlying(symbol)

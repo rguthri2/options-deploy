@@ -302,7 +302,10 @@ function onTabShown(name) {
   if (name === "news") loadNews();
   if (name === "watchlist") loadWatchlist();
   if (name === "portfolio") loadPortfolio();
-  if (name === "scanner") loadScannerStrategies();
+  if (name === "scanner") {
+    loadScannerStrategies();
+    runStockFinder();
+  }
   if (name === "level2") loadLevel2("AAPL");
 }
 
@@ -711,6 +714,73 @@ document.getElementById("rangeTabs").addEventListener("click", (e) => {
   document.querySelectorAll(".range-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
   loadResearch(currentResearchSymbol, currentResearchRange);
 });
+
+// ---------------------------------------------------------------------------
+// Stock finder -- criteria-based screener (price, volume, % change, market
+// cap) backed by /api/public/screen-stocks. Independent of the options
+// scanner below, but its results can be pushed into that ticker list.
+// ---------------------------------------------------------------------------
+
+let lastFoundSymbols = [];
+
+function stockFinderRow(stock) {
+  const up = stock.change_percent >= 0;
+  return `<div class="list-row" style="grid-template-columns: 1fr 1fr 1fr 1fr 1fr;">
+    <span>${stock.symbol}</span>
+    <span>${fmtMoney(stock.price)}</span>
+    <span class="${up ? "trend-change up" : "trend-change down"}">${up ? "+" : ""}${stock.change_percent.toFixed(2)}%</span>
+    <span>${fmtCompact(stock.volume)}</span>
+    <span>${stock.market_cap ? fmtCompact(stock.market_cap) : "—"}</span>
+  </div>`;
+}
+
+async function runStockFinder() {
+  const status = document.getElementById("stockFinderStatus");
+  const results = document.getElementById("stockFinderResults");
+  const btn = document.getElementById("fFindBtn");
+  const minMarketCapB = parseFloat(document.getElementById("fMinMarketCap").value) || 0;
+
+  const params = new URLSearchParams({
+    min_price: document.getElementById("fMinPrice").value || "0",
+    min_volume: document.getElementById("fMinVolume").value || "0",
+    min_change_pct: document.getElementById("fMinChange").value || "0",
+    direction: document.getElementById("fDirection").value,
+    min_market_cap: String(minMarketCapB * 1e9),
+    limit: "25",
+  });
+  const maxPrice = document.getElementById("fMaxPrice").value;
+  if (maxPrice) params.set("max_price", maxPrice);
+
+  btn.disabled = true;
+  status.textContent = "Finding stocks…";
+  results.innerHTML = listRowSkeleton(5) + listRowSkeleton(5) + listRowSkeleton(5);
+  try {
+    const body = await getJSON(`/public/screen-stocks?${params.toString()}`);
+    lastFoundSymbols = body.stocks.map((s) => s.symbol);
+    if (!body.stocks.length) {
+      status.textContent = "No stocks matched those criteria.";
+      results.innerHTML = `<div class="empty-note">Try loosening a filter.</div>`;
+      return;
+    }
+    status.textContent = `${body.stocks.length} match${body.stocks.length === 1 ? "" : "es"}.`;
+    results.innerHTML =
+      `<div class="list-row list-head" style="grid-template-columns: 1fr 1fr 1fr 1fr 1fr;"><span>Symbol</span><span>Price</span><span>Change</span><span>Volume</span><span>Mkt cap</span></div>` +
+      body.stocks.map(stockFinderRow).join("") +
+      `<div style="padding:0.75rem 1rem"><button class="btn-primary" id="useFoundTickersBtn">Use these ${body.stocks.length} in Options ideas ↓</button></div>`;
+    document.getElementById("useFoundTickersBtn").addEventListener("click", () => {
+      document.getElementById("sTickers").value = lastFoundSymbols.join(",");
+      document.getElementById("scannerControls").scrollIntoView({ behavior: "smooth", block: "start" });
+      runScannerScan();
+    });
+  } catch (err) {
+    status.textContent = err.message;
+    results.innerHTML = "";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("fFindBtn").addEventListener("click", runStockFinder);
 
 // ---------------------------------------------------------------------------
 // Scanner (read-only: same screening engine as the Trading module, no Trade

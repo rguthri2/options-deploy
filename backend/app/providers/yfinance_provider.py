@@ -11,6 +11,7 @@ from datetime import date, datetime
 
 from ..greeks import days_to_expiration
 from ..models import OptionContract, OptionType, Underlying
+from ..stock_screener import StockScreenCriteria
 from .base import MarketDataProvider, ProviderError
 
 
@@ -187,6 +188,69 @@ class YFinanceProvider(MarketDataProvider):
                 continue
             points.append({"t": ts.isoformat(), "c": round(close, 2)})
         return points
+
+    def screen_stocks(self, criteria: StockScreenCriteria) -> list[dict]:
+        """Query Yahoo Finance's own stock screener via yfinance's
+        `EquityQuery`/`screen()` (added in yfinance ~0.2.38+).
+
+        This talks to an internal, not-officially-documented Yahoo endpoint
+        that yfinance reverse-engineers -- unlike quotes/history/news, it can
+        change shape or break without notice on Yahoo's side, and could not
+        be verified against live data from the sandbox this was written in
+        (outbound access to Yahoo Finance is blocked there by policy; see
+        scripts/yfinance_live_test_report.md). Test it against real data on
+        a machine with normal internet access before relying on it.
+        """
+        pieces = [self._yf.EquityQuery("eq", ["region", "us"])]
+        if criteria.min_price > 0:
+            pieces.append(self._yf.EquityQuery("gte", ["intradayprice", criteria.min_price]))
+        if criteria.max_price is not None:
+            pieces.append(self._yf.EquityQuery("lte", ["intradayprice", criteria.max_price]))
+        if criteria.min_volume > 0:
+            pieces.append(self._yf.EquityQuery("gte", ["dayvolume", criteria.min_volume]))
+        if criteria.min_market_cap > 0:
+            pieces.append(self._yf.EquityQuery("gte", ["intradaymarketcap", criteria.min_market_cap]))
+        if criteria.min_change_pct > 0:
+            if criteria.direction == "gainers":
+                pieces.append(self._yf.EquityQuery("gte", ["percentchange", criteria.min_change_pct]))
+            elif criteria.direction == "losers":
+                pieces.append(self._yf.EquityQuery("lte", ["percentchange", -criteria.min_change_pct]))
+            else:
+                pieces.append(
+                    self._yf.EquityQuery(
+                        "or",
+                        [
+                            self._yf.EquityQuery("gte", ["percentchange", criteria.min_change_pct]),
+                            self._yf.EquityQuery("lte", ["percentchange", -criteria.min_change_pct]),
+                        ],
+                    )
+                )
+        query = self._yf.EquityQuery("and", pieces) if len(pieces) > 1 else pieces[0]
+
+        try:
+            response = self._yf.screen(query, sortField="dayvolume", sortAsc=False, size=min(criteria.limit, 50))
+        except Exception as exc:  # noqa: BLE001 - Yahoo's screener endpoint is not a stable contract
+            raise ProviderError(f"Stock screen failed: {exc}") from exc
+
+        results = []
+        for row in response.get("quotes", []):
+            price = _safe_float(row.get("regularMarketPrice"))
+            previous_close = _safe_float(row.get("regularMarketPreviousClose"), price)
+            results.append(
+                {
+                    "symbol": row.get("symbol", ""),
+                    "name": row.get("shortName") or row.get("longName") or row.get("symbol", ""),
+                    "price": round(price, 2),
+                    "previous_close": round(previous_close, 2),
+                    "change": round(price - previous_close, 2),
+                    "change_percent": round(_safe_float(row.get("regularMarketChangePercent")), 2),
+                    "day_high": round(_safe_float(row.get("regularMarketDayHigh"), price), 2),
+                    "day_low": round(_safe_float(row.get("regularMarketDayLow"), price), 2),
+                    "volume": _safe_int(row.get("regularMarketVolume")),
+                    "market_cap": row.get("marketCap"),
+                }
+            )
+        return results
 
     def get_news(self, symbols: list[str]) -> list[dict]:
         items: list[dict] = []

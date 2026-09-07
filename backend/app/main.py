@@ -11,6 +11,7 @@ Endpoints:
   GET  /api/public/quote?symbol=AAPL        (public)
   GET  /api/public/history?symbol=&range=   (public)
   GET  /api/public/news?symbols=AAPL,MSFT   (public)
+  GET  /api/public/screen-stocks?...        (public; criteria-based stock screener)
   GET  /api/public/level2?symbol=AAPL       (public; clearly-labeled simulated data)
   GET  /api/broker/status                   (auth required)
   GET  /api/account, /api/positions         (auth required)
@@ -45,6 +46,7 @@ from .config import get_settings
 from .models import ScreeningCriteria
 from .providers import ProviderError, get_provider
 from .screener import screen_chain
+from .stock_screener import StockScreenCriteria
 from .serializers import (
     account_to_dict,
     contract_to_dict,
@@ -266,6 +268,52 @@ def public_news(symbols: str = Query("AAPL,MSFT,NVDA,TSLA,SPY", description="Com
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     items.sort(key=lambda item: item.get("published_at", ""), reverse=True)
     return {"items": items}
+
+
+_VALID_DIRECTIONS = {"gainers", "losers", "either"}
+
+
+@app.get("/api/public/screen-stocks")
+def public_screen_stocks(
+    min_price: float = Query(0.0, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    min_volume: int = Query(0, ge=0),
+    min_change_pct: float = Query(0.0, ge=0, description="Magnitude threshold; sign picked by `direction`"),
+    direction: str = Query("either", description="gainers | losers | either"),
+    min_market_cap: float = Query(0.0, ge=0),
+    limit: int = Query(25, ge=1, le=50),
+) -> dict:
+    if direction not in _VALID_DIRECTIONS:
+        raise HTTPException(status_code=400, detail=f"direction must be one of {sorted(_VALID_DIRECTIONS)}")
+    if max_price is not None and max_price < min_price:
+        raise HTTPException(status_code=400, detail="max_price must be >= min_price")
+
+    criteria = StockScreenCriteria(
+        min_price=min_price,
+        max_price=max_price,
+        min_volume=min_volume,
+        min_change_pct=min_change_pct,
+        direction=direction,
+        min_market_cap=min_market_cap,
+        limit=limit,
+    )
+    provider = get_provider()
+    try:
+        stocks = provider.screen_stocks(criteria)
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "criteria": {
+            "min_price": min_price,
+            "max_price": max_price,
+            "min_volume": min_volume,
+            "min_change_pct": min_change_pct,
+            "direction": direction,
+            "min_market_cap": min_market_cap,
+            "limit": limit,
+        },
+        "stocks": stocks,
+    }
 
 
 @app.get("/api/public/level2")

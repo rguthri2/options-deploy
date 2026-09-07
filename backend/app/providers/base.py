@@ -10,6 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from ..models import OptionContract, Underlying
+from ..stock_screener import StockScreenCriteria
 
 
 class MarketDataProvider(ABC):
@@ -42,6 +43,13 @@ class MarketDataProvider(ABC):
         """Return recent news items: [{"title", "publisher", "link", "published_at"}, ...].
         Optional -- see get_quote_detail."""
         raise ProviderError(f"{type(self).__name__} does not support news.")
+
+    def screen_stocks(self, criteria: StockScreenCriteria) -> list[dict]:
+        """Return get_quote_detail()-shaped dicts matching `criteria`
+        (price range, min volume, % change, min market cap), ranked by
+        |% change| descending and capped at `criteria.limit`.
+        Optional -- see get_quote_detail."""
+        raise ProviderError(f"{type(self).__name__} does not support stock screening.")
 
 
 class ProviderError(RuntimeError):

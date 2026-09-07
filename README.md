@@ -96,7 +96,8 @@ data source. `yfinance` (free, no API key) is wired up for that, but it needs
 outbound network access to Yahoo Finance, which isn't available in every
 environment (e.g. this was built in a sandboxed session where that access is
 blocked). The `MockProvider` generates a deterministic, realistic-shaped
-option chain for a handful of symbols (AAPL, MSFT, NVDA, TSLA, SPY) so the
+option chain for a handful of symbols (AAPL, MSFT, NVDA, TSLA, SPY, GOOGL,
+AMZN, META, AMD, NFLX, JPM) so the
 whole app — screener, strategies, API, UI, tests — can be developed and
 verified end-to-end without network access, and demoed offline. Switch to
 live data with `DATA_PROVIDER=yfinance` (see below).
@@ -227,6 +228,7 @@ supports single-leg equity orders (no options orders, no multi-leg spreads
 - `GET /api/public/quote?symbol=AAPL` — price, change, day range, volume, market cap; public
 - `GET /api/public/history?symbol=AAPL&range=1D|5D|1W|1M|1Y` — price history for charting; public
 - `GET /api/public/news?symbols=AAPL,MSFT` — recent headlines; public
+- `GET /api/public/screen-stocks?min_price=&max_price=&min_volume=&min_change_pct=&direction=either|gainers|losers&min_market_cap=&limit=` — criteria-based stock screener (all params optional); public
 - `GET /api/public/level2?symbol=AAPL` — **simulated** order-book depth (always carries `simulated: true` and a disclaimer — no free/available data source provides real Level 2 depth); public
 - `GET /api/broker/status` — which broker is active and whether live trading is enabled; auth required
 - `GET /api/account`, `GET /api/positions`, `GET /api/orders` — auth required
