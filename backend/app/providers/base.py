@@ -35,8 +35,9 @@ class MarketDataProvider(ABC):
         raise ProviderError(f"{type(self).__name__} does not support quote details.")
 
     def get_history(self, symbol: str, range_key: str) -> list[dict]:
-        """Return [{"t": iso-timestamp, "c": close_price}, ...] for one of the
-        range keys "1D", "5D", "1W", "1M", "1Y". Optional -- see get_quote_detail."""
+        """Return OHLCV bars -- [{"t": iso-timestamp, "o", "h", "l", "c", "v"}, ...]
+        (open/high/low/close/volume) -- for one of the range keys "1D", "5D",
+        "1W", "1M", "1Y". Optional -- see get_quote_detail."""
         raise ProviderError(f"{type(self).__name__} does not support price history.")
 
     def get_news(self, symbols: list[str]) -> list[dict]:

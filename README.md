@@ -13,6 +13,13 @@ Only the Trading module (`trading.html`) requires logging in — the rest of
 the site (news, watchlist, portfolio preview, research, scanner, Level 2) is
 public, since none of it touches money or orders.
 
+**Stock research charting**: Line, Area, and Candlestick chart types, with
+overlay indicators (SMA 20/50, EMA 12/26, Bollinger Bands) and separate
+sub-panels for Volume, RSI (14), and MACD (12, 26, 9) — all computed
+client-side (`frontend/site.js`) from the OHLCV bars `/api/public/history`
+returns. A range too short to feed an indicator (e.g. MACD needs ~35+ bars)
+shows a plain-language note instead of a blank panel.
+
 **Nothing here is financial advice**, and quotes/greeks/payoff figures are
 estimates — verify everything with your broker before acting on it. The app
 places real orders **only** if you explicitly configure it to (see
@@ -242,7 +249,7 @@ supports single-leg equity orders (no options orders, no multi-leg spreads
 - `GET /api/screen?ticker=AAPL[&min_oi=&min_delta=&min_dte=]` — screened contracts for one ticker; public
 - `GET /api/scan?tickers=AAPL,MSFT&strategy=all|<key>[&min_oi=&min_delta=&min_dte=]` — strategy ideas per ticker; public
 - `GET /api/public/quote?symbol=AAPL` — price, change, day range, volume, market cap; public
-- `GET /api/public/history?symbol=AAPL&range=1D|5D|1W|1M|1Y` — price history for charting; public
+- `GET /api/public/history?symbol=AAPL&range=1D|5D|1W|1M|1Y` — OHLCV bars (open/high/low/close/volume) for charting; public
 - `GET /api/public/news?symbols=AAPL,MSFT` — recent headlines; public
 - `GET /api/public/screen-stocks?min_price=&max_price=&min_volume=&min_change_pct=&direction=either|gainers|losers&min_market_cap=&limit=` — criteria-based stock screener (all params optional); public
 - `GET /api/public/level2?symbol=AAPL` — **simulated** order-book depth (always carries `simulated: true` and a disclaimer — no free/available data source provides real Level 2 depth); public

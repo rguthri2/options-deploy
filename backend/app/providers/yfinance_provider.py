@@ -186,7 +186,17 @@ class YFinanceProvider(MarketDataProvider):
             close = _safe_float(row.get("Close"), None)
             if close is None:
                 continue
-            points.append({"t": ts.isoformat(), "c": round(close, 2)})
+            open_ = _safe_float(row.get("Open"), close)
+            points.append(
+                {
+                    "t": ts.isoformat(),
+                    "o": round(open_, 2),
+                    "h": round(_safe_float(row.get("High"), max(open_, close)), 2),
+                    "l": round(_safe_float(row.get("Low"), min(open_, close)), 2),
+                    "c": round(close, 2),
+                    "v": _safe_int(row.get("Volume")),
+                }
+            )
         return points
 
     def screen_stocks(self, criteria: StockScreenCriteria) -> list[dict]:

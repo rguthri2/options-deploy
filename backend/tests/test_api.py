@@ -117,6 +117,16 @@ def test_public_history_rejects_bad_range(client):
     assert resp.status_code == 400
 
 
+def test_public_history_bars_are_ohlcv_with_a_valid_range(client):
+    resp = client.get("/api/public/history", params={"symbol": "AAPL", "range": "1M"})
+    assert resp.status_code == 200
+    for bar in resp.json()["points"]:
+        assert set(bar.keys()) == {"t", "o", "h", "l", "c", "v"}
+        assert bar["h"] >= max(bar["o"], bar["c"])
+        assert bar["l"] <= min(bar["o"], bar["c"])
+        assert bar["v"] >= 0
+
+
 def test_public_news(client):
     resp = client.get("/api/public/news", params={"symbols": "AAPL,MSFT"})
     assert resp.status_code == 200

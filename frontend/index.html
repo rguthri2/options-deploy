@@ -137,7 +137,39 @@
           <button class="range-btn" data-range="1M">1M</button>
           <button class="range-btn" data-range="1Y">1Y</button>
         </div>
+
+        <div class="chart-toolbar">
+          <div class="chart-type-tabs" id="chartTypeTabs">
+            <button class="range-btn is-active" data-chart-type="line">Line</button>
+            <button class="range-btn" data-chart-type="area">Area</button>
+            <button class="range-btn" data-chart-type="candles">Candles</button>
+          </div>
+          <div class="indicator-toggles" id="indicatorToggles">
+            <label><input type="checkbox" data-indicator="sma20" />SMA 20</label>
+            <label><input type="checkbox" data-indicator="sma50" />SMA 50</label>
+            <label><input type="checkbox" data-indicator="ema12" />EMA 12</label>
+            <label><input type="checkbox" data-indicator="ema26" />EMA 26</label>
+            <label><input type="checkbox" data-indicator="bollinger" />Bollinger</label>
+            <label><input type="checkbox" data-indicator="volume" />Volume</label>
+            <label><input type="checkbox" data-indicator="rsi" />RSI</label>
+            <label><input type="checkbox" data-indicator="macd" />MACD</label>
+          </div>
+        </div>
+
         <div class="line-chart-wrap" id="researchChart"></div>
+        <div class="sub-chart-wrap" id="volumeChartWrap" hidden>
+          <div class="sub-chart-label">Volume</div>
+          <div id="volumeChart"></div>
+        </div>
+        <div class="sub-chart-wrap" id="rsiChartWrap" hidden>
+          <div class="sub-chart-label">RSI (14)</div>
+          <div id="rsiChart"></div>
+        </div>
+        <div class="sub-chart-wrap" id="macdChartWrap" hidden>
+          <div class="sub-chart-label">MACD (12, 26, 9)</div>
+          <div id="macdChart"></div>
+        </div>
+
         <div class="stat-grid" id="researchStats"></div>
       </div>
       <div id="researchStatus" class="status-line"></div>

@@ -592,8 +592,61 @@ a { color: inherit; }
 }
 .range-btn.is-active { background: var(--brand); border-color: var(--brand); color: #fff; }
 
-.line-chart-wrap { width: 100%; margin-bottom: 1rem; }
+.line-chart-wrap { width: 100%; margin-bottom: 0.75rem; }
 .line-chart-wrap svg { width: 100%; height: auto; display: block; }
+
+.chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-type-tabs { display: flex; gap: 0.35rem; }
+
+.indicator-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+}
+
+.indicator-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.indicator-toggles input[type="checkbox"] {
+  accent-color: var(--brand);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.sub-chart-wrap {
+  width: 100%;
+  margin-bottom: 0.9rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--border);
+}
+
+.sub-chart-wrap svg { width: 100%; height: auto; display: block; }
+
+.sub-chart-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
 
 .stat-grid {
   display: grid;

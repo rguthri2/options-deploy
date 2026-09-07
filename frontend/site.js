@@ -93,64 +93,244 @@ function sparklineSVG(values, { width = 120, height = 36 } = {}) {
   </svg>`;
 }
 
-let _lineChartSeq = 0;
+// ---------------------------------------------------------------------------
+// Technical indicators -- plain time-series math over a closes[] array.
+// Each returns an array the same length as the input; a period's warm-up
+// window is `null` rather than 0, so overlay lines skip it instead of
+// drawing a false flat run at the bottom of the chart.
+// ---------------------------------------------------------------------------
 
-function renderLineChart(container, points, { width = 640, height = 240 } = {}) {
+function indicatorSMA(values, period) {
+  const out = new Array(values.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+function indicatorEMA(values, period) {
+  const out = new Array(values.length).fill(null);
+  const k = 2 / (period + 1);
+  let prev = null;
+  for (let i = 0; i < values.length; i++) {
+    if (i === period - 1) {
+      let sum = 0;
+      for (let j = 0; j <= i; j++) sum += values[j];
+      prev = sum / period;
+      out[i] = prev;
+    } else if (i >= period) {
+      prev = values[i] * k + prev * (1 - k);
+      out[i] = prev;
+    }
+  }
+  return out;
+}
+
+function indicatorBollinger(values, period = 20, mult = 2) {
+  const mid = indicatorSMA(values, period);
+  const upper = new Array(values.length).fill(null);
+  const lower = new Array(values.length).fill(null);
+  for (let i = 0; i < values.length; i++) {
+    if (mid[i] == null) continue;
+    let sumSq = 0;
+    for (let j = i - period + 1; j <= i; j++) sumSq += (values[j] - mid[i]) ** 2;
+    const stdDev = Math.sqrt(sumSq / period);
+    upper[i] = mid[i] + mult * stdDev;
+    lower[i] = mid[i] - mult * stdDev;
+  }
+  return { mid, upper, lower };
+}
+
+function indicatorRSI(values, period = 14) {
+  const out = new Array(values.length).fill(null);
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 1; i < values.length; i++) {
+    const change = values[i] - values[i - 1];
+    const gain = Math.max(0, change);
+    const loss = Math.max(0, -change);
+    if (i < period) {
+      avgGain += gain;
+      avgLoss += loss;
+    } else if (i === period) {
+      avgGain = (avgGain + gain) / period;
+      avgLoss = (avgLoss + loss) / period;
+      out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    } else {
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
+      out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    }
+  }
+  return out;
+}
+
+function indicatorMACD(values, fast = 12, slow = 26, signalPeriod = 9) {
+  const emaFast = indicatorEMA(values, fast);
+  const emaSlow = indicatorEMA(values, slow);
+  const macdLine = values.map((_, i) => (emaFast[i] != null && emaSlow[i] != null ? emaFast[i] - emaSlow[i] : null));
+  const firstValid = macdLine.findIndex((v) => v != null);
+  const signalLine = new Array(values.length).fill(null);
+  if (firstValid >= 0) {
+    const compact = indicatorEMA(macdLine.slice(firstValid), signalPeriod);
+    for (let i = 0; i < compact.length; i++) signalLine[firstValid + i] = compact[i];
+  }
+  const histogram = values.map((_, i) =>
+    macdLine[i] != null && signalLine[i] != null ? macdLine[i] - signalLine[i] : null
+  );
+  return { macdLine, signalLine, histogram };
+}
+
+// ---------------------------------------------------------------------------
+// Main price chart: line / area / candlesticks, with optional SMA/EMA/
+// Bollinger overlays, a shared hover crosshair, and a legend for whichever
+// overlays are active (the price series itself needs none -- it's the
+// chart's obvious subject, per the "single series needs no legend" rule).
+// ---------------------------------------------------------------------------
+
+let _priceChartSeq = 0;
+
+const OVERLAY_SPECS = [
+  { key: "sma20", label: "SMA 20", colorIndex: 1 },
+  { key: "sma50", label: "SMA 50", colorIndex: 2 },
+  { key: "ema12", label: "EMA 12", colorIndex: 4 },
+  { key: "ema26", label: "EMA 26", colorIndex: 6 },
+];
+
+function pathSegmentsFor(values, xFn, yFn) {
+  // Splits a value series into separate path strings at each null run (an
+  // indicator's warm-up window) so the line never draws a false segment
+  // connecting across missing data.
+  const segments = [];
+  let current = "";
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] == null) {
+      if (current) segments.push(current);
+      current = "";
+      continue;
+    }
+    current += `${current ? "L" : "M"}${xFn(i).toFixed(1)},${yFn(values[i]).toFixed(1)}`;
+  }
+  if (current) segments.push(current);
+  return segments;
+}
+
+function renderPriceChart(container, bars, { chartType = "line", overlays = {}, width = 640, height = 280 } = {}) {
   container.innerHTML = "";
-  if (!points || points.length < 2) {
+  if (!bars || bars.length < 2) {
     container.innerHTML = `<div class="empty-note">Not enough data to chart.</div>`;
     return;
   }
   const c = colors();
-  const id = `lc${_lineChartSeq++}`;
+  const id = `pc${_priceChartSeq++}`;
   const margin = { top: 16, right: 12, bottom: 24, left: 56 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
 
-  const closes = points.map((p) => p.c);
-  let min = Math.min(...closes);
-  let max = Math.max(...closes);
+  const closes = bars.map((b) => b.c);
+  const sma20 = overlays.sma20 ? indicatorSMA(closes, 20) : null;
+  const sma50 = overlays.sma50 ? indicatorSMA(closes, 50) : null;
+  const ema12 = overlays.ema12 ? indicatorEMA(closes, 12) : null;
+  const ema26 = overlays.ema26 ? indicatorEMA(closes, 26) : null;
+  const bollinger = overlays.bollinger ? indicatorBollinger(closes, 20, 2) : null;
+  const overlaySeries = { sma20, sma50, ema12, ema26 };
+
+  const domainValues = [...closes];
+  if (chartType === "candles") {
+    for (const b of bars) domainValues.push(b.h, b.l);
+  }
+  for (const key of Object.keys(overlaySeries)) {
+    if (overlaySeries[key]) domainValues.push(...overlaySeries[key].filter((v) => v != null));
+  }
+  if (bollinger) domainValues.push(...bollinger.upper.filter((v) => v != null), ...bollinger.lower.filter((v) => v != null));
+
+  let min = Math.min(...domainValues);
+  let max = Math.max(...domainValues);
   if (min === max) { min -= 1; max += 1; }
   const pad = (max - min) * 0.08;
   min -= pad;
   max += pad;
 
-  const x = (i) => margin.left + (i / (points.length - 1)) * innerW;
+  const x = (i) => margin.left + (i / (bars.length - 1)) * innerW;
   const y = (v) => margin.top + innerH - ((v - min) / (max - min)) * innerH;
 
-  const color = closes[closes.length - 1] >= closes[0] ? c.up : c.down;
-  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.c).toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L${x(points.length - 1).toFixed(1)},${(margin.top + innerH).toFixed(1)} ` +
-    `L${x(0).toFixed(1)},${(margin.top + innerH).toFixed(1)} Z`;
+  const trendColor = closes[closes.length - 1] >= closes[0] ? c.up : c.down;
 
-  const gridCount = 3;
   let gridLines = "";
-  for (let g = 0; g <= gridCount; g++) {
-    const v = min + ((max - min) * g) / gridCount;
+  for (let g = 0; g <= 3; g++) {
+    const v = min + ((max - min) * g) / 3;
     const yy = y(v).toFixed(1);
     gridLines += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yy}" y2="${yy}" stroke="${c.grid}" stroke-width="1" />`;
     gridLines += `<text x="${margin.left - 8}" y="${yy}" text-anchor="end" dominant-baseline="middle" font-size="10" fill="${c.inkMuted}">$${v.toFixed(2)}</text>`;
   }
 
-  const lastPt = points[points.length - 1];
-  const endLabel = `$${lastPt.c.toFixed(2)}`;
+  let priceMarks = "";
+  if (chartType === "candles") {
+    const bandW = innerW / bars.length;
+    const bodyW = Math.max(2, Math.min(10, bandW * 0.6));
+    bars.forEach((b, i) => {
+      const cx = x(i);
+      const up = b.c >= b.o;
+      const color = up ? c.up : c.down;
+      priceMarks += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${y(b.h).toFixed(1)}" y2="${y(b.l).toFixed(1)}" stroke="${color}" stroke-width="1" />`;
+      const bodyTop = y(Math.max(b.o, b.c));
+      const bodyBottom = y(Math.min(b.o, b.c));
+      priceMarks += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${Math.max(1, bodyBottom - bodyTop).toFixed(1)}" fill="${color}" />`;
+    });
+  } else {
+    const linePath = bars.map((b, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(b.c).toFixed(1)}`).join(" ");
+    if (chartType === "area") {
+      const areaPath = `${linePath} L${x(bars.length - 1).toFixed(1)},${(margin.top + innerH).toFixed(1)} L${x(0).toFixed(1)},${(margin.top + innerH).toFixed(1)} Z`;
+      priceMarks += `<path d="${areaPath}" fill="${trendColor}" opacity="0.10" stroke="none" />`;
+    }
+    priceMarks += `<path d="${linePath}" fill="none" stroke="${trendColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />`;
+    const lastY = y(closes[closes.length - 1]);
+    priceMarks += `<circle cx="${x(bars.length - 1).toFixed(1)}" cy="${lastY.toFixed(1)}" r="4" fill="${trendColor}" stroke="#fff" stroke-width="2" />`;
+  }
+
+  let overlayMarks = "";
+  let legendItems = "";
+  if (bollinger) {
+    const upperSegs = pathSegmentsFor(bollinger.upper, x, y);
+    const lowerSegs = pathSegmentsFor(bollinger.lower, x, y);
+    // A light channel fill between the bands, band-by-band (upper/lower
+    // stay aligned index-for-index since both come from the same SMA).
+    for (let s = 0; s < upperSegs.length; s++) {
+      overlayMarks += `<path d="${upperSegs[s]}" fill="none" stroke="${c.inkMuted}" stroke-width="1" stroke-dasharray="3,3" opacity="0.8" />`;
+    }
+    for (let s = 0; s < lowerSegs.length; s++) {
+      overlayMarks += `<path d="${lowerSegs[s]}" fill="none" stroke="${c.inkMuted}" stroke-width="1" stroke-dasharray="3,3" opacity="0.8" />`;
+    }
+    legendItems += `<span class="legend-item"><span class="legend-swatch" style="background:${c.inkMuted}"></span>Bollinger (20, 2)</span>`;
+  }
+  for (const spec of OVERLAY_SPECS) {
+    const series = overlaySeries[spec.key];
+    if (!series) continue;
+    const color = c.series[spec.colorIndex % c.series.length];
+    for (const seg of pathSegmentsFor(series, x, y)) {
+      overlayMarks += `<path d="${seg}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" />`;
+    }
+    legendItems += `<span class="legend-item"><span class="legend-swatch" style="background:${color}"></span>${spec.label}</span>`;
+  }
 
   container.innerHTML = `
     <div style="position:relative">
-      <svg viewBox="0 0 ${width} ${height}" id="${id}" role="img" aria-label="price history">
+      <svg viewBox="0 0 ${width} ${height}" id="${id}" role="img" aria-label="price chart">
         ${gridLines}
-        <path d="${areaPath}" fill="${color}" opacity="0.10" stroke="none" />
-        <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(lastPt.c).toFixed(1)}" r="4" fill="${color}" stroke="#fff" stroke-width="2" />
-        <text x="${x(points.length - 1).toFixed(1)}" y="${(y(lastPt.c) - 10).toFixed(1)}" text-anchor="end" font-size="11" font-weight="700" fill="${c.ink}">${endLabel}</text>
+        ${priceMarks}
+        ${overlayMarks}
         <g id="${id}-hover" style="display:none">
           <line id="${id}-crosshair" x1="0" x2="0" y1="${margin.top}" y2="${margin.top + innerH}" stroke="${c.baseline}" stroke-width="1" />
-          <circle id="${id}-dot" r="4" fill="${color}" stroke="#fff" stroke-width="2" />
+          <circle id="${id}-dot" r="4" fill="${trendColor}" stroke="#fff" stroke-width="2" />
         </g>
         <rect id="${id}-capture" x="${margin.left}" y="${margin.top}" width="${innerW}" height="${innerH}" fill="transparent" />
       </svg>
-      <div id="${id}-tip" style="position:absolute; display:none; pointer-events:none; background:var(--text); color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; white-space:nowrap; transform:translate(-50%,-115%);"></div>
-    </div>`;
+      <div id="${id}-tip" style="position:absolute; display:none; pointer-events:none; background:var(--text); color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; white-space:nowrap; transform:translate(-50%,-115%); line-height:1.5;"></div>
+    </div>
+    ${legendItems ? `<div class="legend-row">${legendItems}</div>` : ""}`;
 
   const svg = container.querySelector(`#${id}`);
   const capture = container.querySelector(`#${id}-capture`);
@@ -167,11 +347,11 @@ function renderLineChart(container, points, { width = 640, height = 240 } = {}) 
 
   function onMove(evt) {
     const svgX = pointerToSvgX(evt);
-    let idx = Math.round(((svgX - margin.left) / innerW) * (points.length - 1));
-    idx = Math.max(0, Math.min(points.length - 1, idx));
-    const p = points[idx];
+    let idx = Math.round(((svgX - margin.left) / innerW) * (bars.length - 1));
+    idx = Math.max(0, Math.min(bars.length - 1, idx));
+    const b = bars[idx];
     const px = x(idx);
-    const py = y(p.c);
+    const py = y(b.c);
     crosshair.setAttribute("x1", px.toFixed(1));
     crosshair.setAttribute("x2", px.toFixed(1));
     dot.setAttribute("cx", px.toFixed(1));
@@ -181,14 +361,133 @@ function renderLineChart(container, points, { width = 640, height = 240 } = {}) 
     tip.style.left = `${(px / width) * rect.width}px`;
     tip.style.top = `${(py / height) * rect.height}px`;
     tip.style.display = "block";
-    const dt = new Date(p.t);
+    const dt = new Date(b.t);
     const dateLabel = Number.isNaN(dt.getTime()) ? "" : dt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    tip.textContent = `${dateLabel}  $${p.c.toFixed(2)}`;
+    const lines = [dateLabel];
+    if (chartType === "candles") {
+      lines.push(`O ${b.o.toFixed(2)}  H ${b.h.toFixed(2)}  L ${b.l.toFixed(2)}  C ${b.c.toFixed(2)}`);
+    } else {
+      lines.push(`$${b.c.toFixed(2)}`);
+    }
+    for (const spec of OVERLAY_SPECS) {
+      const series = overlaySeries[spec.key];
+      if (series && series[idx] != null) lines.push(`${spec.label}: $${series[idx].toFixed(2)}`);
+    }
+    tip.innerHTML = lines.join("<br>");
   }
 
   capture.addEventListener("mousemove", onMove);
   capture.addEventListener("touchmove", onMove, { passive: true });
   capture.addEventListener("mouseleave", () => { hoverGroup.style.display = "none"; tip.style.display = "none"; });
+}
+
+// --- Sub-panels: volume, RSI, MACD -------------------------------------------
+
+function renderVolumeChart(container, bars, { width = 640, height = 90 } = {}) {
+  container.innerHTML = "";
+  const c = colors();
+  const margin = { top: 6, right: 12, bottom: 6, left: 56 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const maxVol = Math.max(...bars.map((b) => b.v), 1);
+  const bandW = innerW / bars.length;
+  const barW = Math.max(1, Math.min(10, bandW * 0.6));
+  const x = (i) => margin.left + (i / (bars.length - 1)) * innerW;
+
+  let bars_svg = "";
+  bars.forEach((b, i) => {
+    const h = (b.v / maxVol) * innerH;
+    const color = b.c >= b.o ? c.up : c.down;
+    bars_svg += `<rect x="${(x(i) - barW / 2).toFixed(1)}" y="${(margin.top + innerH - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" fill="${color}" opacity="0.6" />`;
+  });
+
+  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="volume">
+    <text x="${margin.left - 8}" y="${margin.top + 4}" text-anchor="end" font-size="9" fill="${c.inkMuted}">${fmtCompact(maxVol)}</text>
+    ${bars_svg}
+  </svg>`;
+}
+
+function renderRSIChart(container, closes, { width = 640, height = 110 } = {}) {
+  container.innerHTML = "";
+  const rsi = indicatorRSI(closes, 14);
+  if (!rsi.some((v) => v != null)) {
+    container.innerHTML = `<div class="empty-note">Not enough bars in this range for RSI (needs 15+) — try a longer range.</div>`;
+    return;
+  }
+  const c = colors();
+  const margin = { top: 10, right: 12, bottom: 10, left: 56 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const x = (i) => margin.left + (i / (closes.length - 1)) * innerW;
+  const y = (v) => margin.top + innerH - (v / 100) * innerH;
+  const rsiColor = c.series[6];
+
+  let refLines = "";
+  for (const [level, label] of [[70, "70"], [30, "30"]]) {
+    const yy = y(level).toFixed(1);
+    refLines += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yy}" y2="${yy}" stroke="${c.grid}" stroke-width="1" stroke-dasharray="3,3" />`;
+    refLines += `<text x="${margin.left - 8}" y="${yy}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="${c.inkMuted}">${label}</text>`;
+  }
+
+  const segments = pathSegmentsFor(rsi, x, y);
+  const lines = segments.map((seg) => `<path d="${seg}" fill="none" stroke="${rsiColor}" stroke-width="1.5" />`).join("");
+
+  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="RSI">${refLines}${lines}</svg>`;
+}
+
+function renderMACDChart(container, closes, { width = 640, height = 130 } = {}) {
+  container.innerHTML = "";
+  const { macdLine, signalLine, histogram } = indicatorMACD(closes);
+  if (!signalLine.some((v) => v != null)) {
+    // MACD needs ~35+ bars before it can produce a single value (26 for the
+    // slow EMA, then 9 more for the signal line's own EMA) -- a short range
+    // like 1D/5D legitimately can't feed it, so say so instead of a blank panel.
+    container.innerHTML = `<div class="empty-note">Not enough bars in this range for MACD (needs ~35+) — try 1M or 1Y.</div>`;
+    return;
+  }
+  const c = colors();
+  const margin = { top: 10, right: 12, bottom: 10, left: 56 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const values = [...macdLine, ...signalLine, ...histogram].filter((v) => v != null);
+  let min = Math.min(0, ...values);
+  let max = Math.max(0, ...values);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.1;
+  min -= pad;
+  max += pad;
+
+  const x = (i) => margin.left + (i / (closes.length - 1)) * innerW;
+  const y = (v) => margin.top + innerH - ((v - min) / (max - min)) * innerH;
+  const zeroY = y(0).toFixed(1);
+
+  const bandW = innerW / closes.length;
+  const barW = Math.max(1, Math.min(8, bandW * 0.6));
+  let histBars = "";
+  histogram.forEach((v, i) => {
+    if (v == null) return;
+    const color = v >= 0 ? c.up : c.down;
+    const yy = y(v);
+    const top = Math.min(yy, y(0));
+    histBars += `<rect x="${(x(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1, Math.abs(yy - y(0))).toFixed(1)}" fill="${color}" opacity="0.5" />`;
+  });
+
+  const macdColor = c.series[0];
+  const signalColor = c.series[1];
+  const macdPath = pathSegmentsFor(macdLine, x, y).map((seg) => `<path d="${seg}" fill="none" stroke="${macdColor}" stroke-width="1.5" />`).join("");
+  const signalPath = pathSegmentsFor(signalLine, x, y).map((seg) => `<path d="${seg}" fill="none" stroke="${signalColor}" stroke-width="1.5" />`).join("");
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="MACD">
+      <line x1="${margin.left}" x2="${width - margin.right}" y1="${zeroY}" y2="${zeroY}" stroke="${c.baseline}" stroke-width="1" />
+      ${histBars}
+      ${macdPath}
+      ${signalPath}
+    </svg>
+    <div class="legend-row">
+      <span class="legend-item"><span class="legend-swatch" style="background:${macdColor}"></span>MACD</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:${signalColor}"></span>Signal</span>
+    </div>`;
 }
 
 function renderDonutChart(container, segments, { width = 260, height = 260 } = {}) {
@@ -662,6 +961,32 @@ async function loadPortfolio() {
 
 let currentResearchSymbol = null;
 let currentResearchRange = "1D";
+let currentResearchBars = null;
+let currentChartType = "line";
+const currentIndicators = { sma20: false, sma50: false, ema12: false, ema26: false, bollinger: false, volume: false, rsi: false, macd: false };
+
+function renderResearchCharts() {
+  if (!currentResearchBars) return;
+  const bars = currentResearchBars;
+  const closes = bars.map((b) => b.c);
+
+  renderPriceChart(document.getElementById("researchChart"), bars, {
+    chartType: currentChartType,
+    overlays: currentIndicators,
+  });
+
+  const volumeWrap = document.getElementById("volumeChartWrap");
+  volumeWrap.hidden = !currentIndicators.volume;
+  if (currentIndicators.volume) renderVolumeChart(document.getElementById("volumeChart"), bars);
+
+  const rsiWrap = document.getElementById("rsiChartWrap");
+  rsiWrap.hidden = !currentIndicators.rsi;
+  if (currentIndicators.rsi) renderRSIChart(document.getElementById("rsiChart"), closes);
+
+  const macdWrap = document.getElementById("macdChartWrap");
+  macdWrap.hidden = !currentIndicators.macd;
+  if (currentIndicators.macd) renderMACDChart(document.getElementById("macdChart"), closes);
+}
 
 async function loadResearch(symbol, range) {
   const status = document.getElementById("researchStatus");
@@ -682,7 +1007,8 @@ async function loadResearch(symbol, range) {
     changeEl.textContent = `${up ? "+" : ""}${fmtMoney(quote.change)} (${up ? "+" : ""}${quote.change_percent.toFixed(2)}%)`;
     changeEl.className = `research-change ${up ? "up" : "down"}`;
 
-    renderLineChart(document.getElementById("researchChart"), history.points);
+    currentResearchBars = history.points;
+    renderResearchCharts();
 
     document.getElementById("researchStats").innerHTML = [
       ["Previous close", fmtMoney(quote.previous_close)],
@@ -696,6 +1022,7 @@ async function loadResearch(symbol, range) {
   } catch (err) {
     status.textContent = err.message;
     card.hidden = true;
+    currentResearchBars = null;
   }
 }
 
@@ -711,8 +1038,23 @@ document.getElementById("rangeTabs").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-range]");
   if (!btn || !currentResearchSymbol) return;
   currentResearchRange = btn.dataset.range;
-  document.querySelectorAll(".range-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
+  document.querySelectorAll("#rangeTabs .range-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
   loadResearch(currentResearchSymbol, currentResearchRange);
+});
+
+document.getElementById("chartTypeTabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-chart-type]");
+  if (!btn) return;
+  currentChartType = btn.dataset.chartType;
+  document.querySelectorAll("#chartTypeTabs .range-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
+  renderResearchCharts();
+});
+
+document.getElementById("indicatorToggles").addEventListener("change", (e) => {
+  const input = e.target.closest("[data-indicator]");
+  if (!input) return;
+  currentIndicators[input.dataset.indicator] = input.checked;
+  renderResearchCharts();
 });
 
 // ---------------------------------------------------------------------------

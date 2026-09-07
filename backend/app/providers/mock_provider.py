@@ -196,13 +196,29 @@ class MockProvider(MarketDataProvider):
 
         points = []
         for i in range(n_points):
+            open_price = price
             price *= 1 + rng.uniform(-0.015, 0.016)
+            close_price = price
+            high = max(open_price, close_price) * (1 + rng.uniform(0.0005, 0.006))
+            low = min(open_price, close_price) * (1 - rng.uniform(0.0005, 0.006))
             ts = now - step * (n_points - 1 - i)
-            points.append({"t": ts.isoformat(), "c": round(price, 2)})
+            points.append(
+                {
+                    "t": ts.isoformat(),
+                    "o": round(open_price, 2),
+                    "h": round(high, 2),
+                    "l": round(low, 2),
+                    "c": round(close_price, 2),
+                    "v": rng.randint(200_000, 8_000_000),
+                }
+            )
         # Nudge the last point to land on the "current" quote so the chart
-        # ends where the rest of the UI says the price is.
+        # ends where the rest of the UI says the price is, while keeping the
+        # OHLC invariant (high >= max(o, c), low <= min(o, c)) intact.
         if points:
             points[-1]["c"] = underlying.price
+            points[-1]["h"] = max(points[-1]["h"], underlying.price)
+            points[-1]["l"] = min(points[-1]["l"], underlying.price)
         return points
 
     def get_news(self, symbols: list[str]) -> list[dict]:
