@@ -33,6 +33,7 @@ READ BEFORE USING WITH REAL MONEY:
 """
 from __future__ import annotations
 
+import logging
 import time
 
 from requests_oauthlib import OAuth1Session
@@ -45,6 +46,30 @@ from .serializers import row_to_order_result
 
 _OAUTH_BASE = "https://api.etrade.com"  # OAuth token endpoints live here regardless of sandbox/prod
 _AUTHORIZE_BASE = "https://us.etrade.com/e/t/etws/authorize"
+
+_logger = logging.getLogger("etrade_broker")
+
+
+def _log_raw_response(label: str, resp) -> None:
+    """Log the raw E*TRADE response body so it's inspectable via
+    `journalctl -u options-app` against a real account -- this integration has
+    never been exercised against live E*TRADE data (see module docstring).
+    Logged at WARNING so it shows up without any logging configuration (the
+    default root logger drops INFO and below); never returned to the browser.
+    """
+    _logger.warning("E*TRADE %s response [%s]: %s", label, resp.status_code, resp.text[:2000])
+
+
+def _as_list(value):
+    """E*TRADE's XML-to-JSON translation collapses a single-occurrence
+    repeating element (e.g. AccountPortfolio, Position) into a bare object
+    instead of a one-item array. Normalize both shapes so an account with
+    exactly one portfolio/position doesn't silently disappear."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
 
 
 def _raise_for_status(resp) -> None:
@@ -275,6 +300,7 @@ class ETradeBroker(Broker):
             f"{self._api_base}/v1/accounts/{account_id_key}/balance.json",
             params={"instType": "BROKERAGE", "realTimeNAV": "true"},
         )
+        _log_raw_response("balance", resp)
         _raise_for_status(resp)
         try:
             computed = resp.json()["BalanceResponse"]["Computed"]
@@ -295,17 +321,19 @@ class ETradeBroker(Broker):
     def get_positions(self) -> list[Position]:
         account_id_key = self._ensure_account()
         resp = self._session().get(f"{self._api_base}/v1/accounts/{account_id_key}/portfolio.json")
+        _log_raw_response("portfolio", resp)
         if resp.status_code == 204:
             return []
         _raise_for_status(resp)
         try:
-            account_portfolios = resp.json().get("PortfolioResponse", {}).get("AccountPortfolio", [])
-        except ValueError as exc:
+            portfolio_response = resp.json()["PortfolioResponse"]
+        except (ValueError, KeyError) as exc:
             raise BrokerError(f"Unexpected E*TRADE portfolio response: {resp.text[:500]}") from exc
+        account_portfolios = _as_list(portfolio_response.get("AccountPortfolio"))
 
         positions: list[Position] = []
         for portfolio in account_portfolios:
-            for pos in portfolio.get("Position", []):
+            for pos in _as_list(portfolio.get("Position")):
                 quantity = int(pos.get("quantity", 0))
                 positions.append(
                     Position(
