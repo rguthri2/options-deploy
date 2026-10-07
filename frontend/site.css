@@ -272,6 +272,33 @@ a { color: inherit; }
 .scanner-subhead { font-size: 1rem; margin: 0 0 0.75rem; }
 .scanner-subhead:not(:first-of-type) { margin-top: 2rem; }
 
+/* --- RG Profit Options Screener: a wider, denser table (7 numeric columns)
+   than the generic .list-row default supports, so it gets its own grid and
+   scrolls horizontally on narrow screens instead of squeezing columns
+   unreadably thin. --- */
+/* .list-card normally clips (overflow: hidden) for its rounded corners, but
+   that also clips a wider-than-container table before this wrapper's own
+   horizontal scroll ever sees the overflow -- let it through here instead. */
+.profit-screener-scroll { overflow-x: auto; }
+.profit-screener-scroll .list-card { overflow: visible; }
+.profit-screener-table.list-row {
+  grid-template-columns: 0.9fr 0.8fr 0.9fr 1fr 1fr 0.9fr 0.8fr;
+  min-width: 640px;
+}
+.profit-screener-table.list-head button.sort-col {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+.profit-screener-table.list-head button.sort-col:hover { color: var(--text-primary); }
+.profit-screener-table.list-head .sort-arrow { font-size: 0.65rem; opacity: 0.6; }
+
 .section-row {
   display: flex;
   align-items: baseline;

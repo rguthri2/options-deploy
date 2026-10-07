@@ -605,6 +605,7 @@ function onTabShown(name) {
     loadScannerStrategies();
     runStockFinder();
   }
+  if (name === "rgscreener") runProfitScreener();
   if (name === "level2") loadLevel2("AAPL");
 }
 
@@ -714,8 +715,8 @@ function newsCardSkeleton() {
   </div>`;
 }
 
-function listRowSkeleton(cols) {
-  return `<div class="list-row" aria-hidden="true">${Array.from({ length: cols }, () => `<span class="skel skel-line w-60"></span>`).join("")}</div>`;
+function listRowSkeleton(cols, extraClass = "") {
+  return `<div class="list-row${extraClass ? ` ${extraClass}` : ""}" aria-hidden="true">${Array.from({ length: cols }, () => `<span class="skel skel-line w-60"></span>`).join("")}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1123,6 +1124,116 @@ async function runStockFinder() {
 }
 
 document.getElementById("fFindBtn").addEventListener("click", runStockFinder);
+
+// ---------------------------------------------------------------------------
+// RG Profit Options Screener -- a Think-or-Swim-style volume/volatility scan
+// backed by /api/public/profit-screener (screen-stocks's criteria, enriched
+// with Average Daily Volume, Relative Volume, and ATR). Sorting re-ranks the
+// already-fetched rows in the browser rather than refetching.
+// ---------------------------------------------------------------------------
+
+const PROFIT_SCREENER_COLUMNS = [
+  { key: "symbol", label: "Symbol" },
+  { key: "price", label: "Last" },
+  { key: "change_percent", label: "Chg %" },
+  { key: "volume", label: "Volume" },
+  { key: "avg_volume", label: "Avg Vol" },
+  { key: "relative_volume", label: "Rel Vol" },
+  { key: "atr", label: "ATR" },
+];
+
+let profitScreenerRows = [];
+let profitScreenerSort = { key: "relative_volume", dir: "desc" };
+
+function profitScreenerHeadRow() {
+  const cells = PROFIT_SCREENER_COLUMNS.map((col) => {
+    const isActive = profitScreenerSort.key === col.key;
+    const arrow = isActive ? (profitScreenerSort.dir === "desc" ? "▼" : "▲") : "";
+    return `<span><button type="button" class="sort-col" data-sort-key="${col.key}">${col.label}${arrow ? ` <span class="sort-arrow">${arrow}</span>` : ""}</button></span>`;
+  }).join("");
+  return `<div class="list-row list-head profit-screener-table">${cells}</div>`;
+}
+
+function profitScreenerRow(stock) {
+  const up = stock.change_percent >= 0;
+  return `<div class="list-row profit-screener-table">
+    <span>${stock.symbol}</span>
+    <span>${fmtMoney(stock.price)}</span>
+    <span class="${up ? "trend-change up" : "trend-change down"}">${up ? "+" : ""}${stock.change_percent.toFixed(2)}%</span>
+    <span>${fmtCompact(stock.volume)}</span>
+    <span>${stock.avg_volume ? fmtCompact(stock.avg_volume) : "—"}</span>
+    <span>${stock.relative_volume !== null && stock.relative_volume !== undefined ? `${stock.relative_volume.toFixed(2)}x` : "—"}</span>
+    <span>${stock.atr !== null && stock.atr !== undefined ? fmtMoney(stock.atr) : "—"}</span>
+  </div>`;
+}
+
+function renderProfitScreenerRows() {
+  const { key, dir } = profitScreenerSort;
+  const sorted = [...profitScreenerRows].sort((a, b) => {
+    const av = a[key],
+      bv = b[key];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+    return dir === "desc" ? -cmp : cmp;
+  });
+  document.getElementById("profitScreenerResults").innerHTML =
+    profitScreenerHeadRow() + sorted.map(profitScreenerRow).join("");
+  document.querySelectorAll("#profitScreenerResults .sort-col").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sortKey = btn.dataset.sortKey;
+      if (profitScreenerSort.key === sortKey) {
+        profitScreenerSort.dir = profitScreenerSort.dir === "desc" ? "asc" : "desc";
+      } else {
+        profitScreenerSort = { key: sortKey, dir: "desc" };
+      }
+      renderProfitScreenerRows();
+    });
+  });
+}
+
+async function runProfitScreener() {
+  const status = document.getElementById("profitScreenerStatus");
+  const results = document.getElementById("profitScreenerResults");
+  const btn = document.getElementById("pScanBtn");
+  const minMarketCapB = parseFloat(document.getElementById("pMinMarketCap").value) || 0;
+
+  const params = new URLSearchParams({
+    min_price: document.getElementById("pMinPrice").value || "0",
+    min_volume: document.getElementById("pMinVolume").value || "0",
+    min_change_pct: document.getElementById("pMinChange").value || "0",
+    direction: document.getElementById("pDirection").value,
+    min_market_cap: String(minMarketCapB * 1e9),
+    limit: "25",
+  });
+  const maxPrice = document.getElementById("pMaxPrice").value;
+  if (maxPrice) params.set("max_price", maxPrice);
+
+  btn.disabled = true;
+  status.textContent = "Scanning…";
+  results.innerHTML =
+    listRowSkeleton(7, "profit-screener-table") +
+    listRowSkeleton(7, "profit-screener-table") +
+    listRowSkeleton(7, "profit-screener-table");
+  try {
+    const body = await getJSON(`/public/profit-screener?${params.toString()}`);
+    profitScreenerRows = body.stocks;
+    if (!profitScreenerRows.length) {
+      status.textContent = "No stocks matched those criteria.";
+      results.innerHTML = `<div class="empty-note">Try loosening a filter.</div>`;
+      return;
+    }
+    status.textContent = `${profitScreenerRows.length} match${profitScreenerRows.length === 1 ? "" : "es"}.`;
+    renderProfitScreenerRows();
+  } catch (err) {
+    status.textContent = err.message;
+    results.innerHTML = "";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("pScanBtn").addEventListener("click", runProfitScreener);
 
 // ---------------------------------------------------------------------------
 // Scanner (read-only: same screening engine as the Trading module, no Trade

@@ -12,6 +12,8 @@ Endpoints:
   GET  /api/public/history?symbol=&range=   (public)
   GET  /api/public/news?symbols=AAPL,MSFT   (public)
   GET  /api/public/screen-stocks?...        (public; criteria-based stock screener)
+  GET  /api/public/profit-screener?...      (public; "RG Profit Options Screener" -- adds
+                                              ADV/relative volume/ATR, ranked by relative volume)
   GET  /api/public/level2?symbol=AAPL       (public; clearly-labeled simulated data)
   GET  /api/broker/status                   (auth required)
   POST /api/broker/mode                     (auth required; in-app paper/live toggle)
@@ -58,6 +60,7 @@ from .serializers import (
     underlying_to_dict,
 )
 from .strategies import all_strategies, get_strategy
+from .technicals import average_true_range, average_volume
 from .trading import BrokerError, OrderRequest, effective_mode, get_broker
 from .trading.etrade_broker import ETradeBroker
 
@@ -349,6 +352,83 @@ def public_screen_stocks(
             "limit": limit,
         },
         "stocks": stocks,
+    }
+
+
+@app.get("/api/public/profit-screener")
+def rg_profit_options_screener(
+    min_price: float = Query(0.0, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    min_volume: int = Query(0, ge=0),
+    min_change_pct: float = Query(0.0, ge=0, description="Magnitude threshold; sign picked by `direction`"),
+    direction: str = Query("either", description="gainers | losers | either"),
+    min_market_cap: float = Query(0.0, ge=0),
+    limit: int = Query(25, ge=1, le=50),
+) -> dict:
+    """RG Profit Options Screener: a Think-or-Swim-style volume/volatility
+    scan -- the same price/volume/%-change/market-cap criteria as
+    /api/public/screen-stocks, with each match enriched with Average Daily
+    Volume, Relative Volume, and Average True Range from daily history, and
+    ranked by relative volume (highest first) rather than |% change|.
+
+    Two scope notes, since both are judgment calls rather than guesses:
+      - Average Daily Volume/ATR use a 20/14-day lookback (common defaults,
+        not vendor-specified); a symbol with less history than that omits
+        the fields it can't support rather than computing a misleadingly
+        short average.
+      - Relative volume here is today's full volume divided by that 20-day
+        average -- it is NOT time-of-day-adjusted the way a real-time ToS
+        scan is (comparing volume-so-far to the average volume at this same
+        point in the session), since that needs an intraday volume profile
+        this app's providers don't expose. Treat it as a daily, not
+        intraday, relative-volume reading.
+    """
+    if direction not in _VALID_DIRECTIONS:
+        raise HTTPException(status_code=400, detail=f"direction must be one of {sorted(_VALID_DIRECTIONS)}")
+    if max_price is not None and max_price < min_price:
+        raise HTTPException(status_code=400, detail="max_price must be >= min_price")
+
+    criteria = StockScreenCriteria(
+        min_price=min_price,
+        max_price=max_price,
+        min_volume=min_volume,
+        min_change_pct=min_change_pct,
+        direction=direction,
+        min_market_cap=min_market_cap,
+        limit=limit,
+    )
+    provider = get_provider()
+    try:
+        stocks = provider.screen_stocks(criteria)
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    rows = []
+    for stock in stocks:
+        avg_volume = None
+        atr = None
+        try:
+            bars = provider.get_history(stock["symbol"], "1M")
+            avg_volume = average_volume(bars)
+            atr = average_true_range(bars)
+        except ProviderError:
+            pass  # history is a nice-to-have here -- the base quote still stands
+        volume = stock.get("volume") or 0
+        relative_volume = round(volume / avg_volume, 2) if avg_volume else None
+        rows.append({**stock, "avg_volume": avg_volume, "relative_volume": relative_volume, "atr": atr})
+
+    rows.sort(key=lambda r: r.get("relative_volume") or 0, reverse=True)
+    return {
+        "criteria": {
+            "min_price": min_price,
+            "max_price": max_price,
+            "min_volume": min_volume,
+            "min_change_pct": min_change_pct,
+            "direction": direction,
+            "min_market_cap": min_market_cap,
+            "limit": limit,
+        },
+        "stocks": rows,
     }
 
 

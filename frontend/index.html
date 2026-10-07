@@ -20,6 +20,7 @@
         <button class="tab-btn" data-tab="portfolio">Portfolio</button>
         <button class="tab-btn" data-tab="research">Research</button>
         <button class="tab-btn" data-tab="scanner">Scanner</button>
+        <button class="tab-btn" data-tab="rgscreener">RG Screener</button>
         <button class="tab-btn" data-tab="level2">Level 2</button>
       </nav>
       <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
@@ -247,6 +248,47 @@
       <div id="scannerResults"></div>
     </section>
 
+    <!-- ============ RG PROFIT OPTIONS SCREENER ============ -->
+    <section class="tab-panel" data-panel="rgscreener">
+      <div class="panel-heading">
+        <h1>RG Profit Options Screener</h1>
+        <p class="panel-sub">A Think-or-Swim-style volume/volatility scan — Last, % change, Volume, Average Daily Volume, Relative Volume, and ATR, ranked by relative volume. Click a column to re-sort. Read-only, not financial advice.</p>
+      </div>
+      <div class="controls" id="profitScreenerControls">
+        <div class="field">
+          <label for="pMinPrice">Min price</label>
+          <input id="pMinPrice" type="number" min="0" step="1" placeholder="0" />
+        </div>
+        <div class="field">
+          <label for="pMaxPrice">Max price</label>
+          <input id="pMaxPrice" type="number" min="0" step="1" placeholder="Any" />
+        </div>
+        <div class="field">
+          <label for="pMinVolume">Min volume</label>
+          <input id="pMinVolume" type="number" min="0" step="100000" placeholder="0" />
+        </div>
+        <div class="field">
+          <label for="pMinChange">Min |change %|</label>
+          <input id="pMinChange" type="number" min="0" step="0.5" placeholder="0" />
+        </div>
+        <div class="field">
+          <label for="pDirection">Direction</label>
+          <select id="pDirection">
+            <option value="either">Either</option>
+            <option value="gainers">Gainers</option>
+            <option value="losers">Losers</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="pMinMarketCap">Min market cap ($B)</label>
+          <input id="pMinMarketCap" type="number" min="0" step="1" placeholder="0" />
+        </div>
+        <button class="btn-primary" id="pScanBtn">Scan</button>
+      </div>
+      <div id="profitScreenerStatus" class="status-line"></div>
+      <div class="profit-screener-scroll"><div class="list-card" id="profitScreenerResults"></div></div>
+    </section>
+
     <!-- ============ LEVEL 2 ============ -->
     <section class="tab-panel" data-panel="level2">
       <div class="panel-heading">
@@ -295,6 +337,7 @@
     <div class="more-sheet-backdrop" id="moreSheetBackdrop"></div>
     <div class="more-sheet-card">
       <button class="bnav-btn" data-tab="news"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 4h13a2 2 0 0 1 2 2v13a1 1 0 0 0 1 1H5a1 1 0 0 1-1-1zm2 3v2h9V7zm0 4v2h9v-2zm0 4v2h6v-2z"/></svg><span>News</span></button>
+      <button class="bnav-btn" data-tab="rgscreener"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 3h8v8H3zm10 0h8v5h-8zm0 7h8v11h-8zM3 13h8v8H3z"/></svg><span>RG Screener</span></button>
       <button class="bnav-btn" data-tab="level2"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 10h8v4H3zm10-6h8v10h-8zm0 12h8v4h-8zM3 16h8v4H3z"/></svg><span>Level 2</span></button>
       <a class="bnav-btn" href="trading.html"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9z"/></svg><span>Trading</span></a>
     </div>

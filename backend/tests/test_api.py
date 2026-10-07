@@ -194,6 +194,30 @@ def test_public_screen_stocks_rejects_max_less_than_min_price(client):
     assert resp.status_code == 400
 
 
+def test_public_profit_screener_adds_adv_relvol_atr_and_ranks_by_relvol(client):
+    resp = client.get("/api/public/profit-screener")
+    assert resp.status_code == 200
+    stocks = resp.json()["stocks"]
+    assert stocks
+    for stock in stocks:
+        assert stock["avg_volume"] is not None
+        assert stock["atr"] is not None
+        assert stock["relative_volume"] == round(stock["volume"] / stock["avg_volume"], 2)
+    rel_vols = [s["relative_volume"] for s in stocks]
+    assert rel_vols == sorted(rel_vols, reverse=True)
+
+
+def test_public_profit_screener_honors_screen_stocks_criteria(client):
+    resp = client.get("/api/public/profit-screener", params={"direction": "gainers", "min_change_pct": 1.0})
+    assert resp.status_code == 200
+    assert [s["symbol"] for s in resp.json()["stocks"]] == ["NVDA"]
+
+
+def test_public_profit_screener_rejects_bad_direction(client):
+    resp = client.get("/api/public/profit-screener", params={"direction": "sideways"})
+    assert resp.status_code == 400
+
+
 def test_public_level2_is_labeled_simulated(client):
     resp = client.get("/api/public/level2", params={"symbol": "AAPL"})
     assert resp.status_code == 200
