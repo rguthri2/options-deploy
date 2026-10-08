@@ -605,7 +605,10 @@ function onTabShown(name) {
     loadScannerStrategies();
     runStockFinder();
   }
-  if (name === "rgscreener") runProfitScreener();
+  if (name === "rgscreener") {
+    loadScanFieldsOnce();
+    runProfitScreener();
+  }
   if (name === "level2") loadLevel2("AAPL");
 }
 
@@ -1132,39 +1135,65 @@ document.getElementById("fFindBtn").addEventListener("click", runStockFinder);
 // already-fetched rows in the browser rather than refetching.
 // ---------------------------------------------------------------------------
 
-const PROFIT_SCREENER_COLUMNS = [
-  { key: "symbol", label: "Symbol" },
-  { key: "price", label: "Last" },
-  { key: "change_percent", label: "Chg %" },
-  { key: "volume", label: "Volume" },
-  { key: "avg_volume", label: "Avg Vol" },
-  { key: "relative_volume", label: "Rel Vol" },
-  { key: "atr", label: "ATR" },
+const PROFIT_SCREENER_BASE_COLUMNS = [
+  { key: "symbol", label: "Symbol", unit: null },
+  { key: "price", label: "Last", unit: "$" },
+  { key: "change_percent", label: "Chg %", unit: "%" },
+  { key: "volume", label: "Volume", unit: "" },
+  { key: "avg_volume", label: "Avg Vol", unit: "" },
+  { key: "relative_volume", label: "Rel Vol", unit: "x" },
+  { key: "atr", label: "ATR", unit: "$" },
 ];
 
 let profitScreenerRows = [];
 let profitScreenerSort = { key: "relative_volume", dir: "desc" };
 
+// Any scan filter the user adds for a field outside the base 7 columns gets
+// its own column too -- so filtering by (e.g.) Beta also shows Beta, rather
+// than narrowing results by a value you can't see.
+function currentProfitScreenerColumns() {
+  const extra = activeScanFilters
+    .map((f) => scanFieldsByKey[f.field])
+    .filter((f) => f && !PROFIT_SCREENER_BASE_COLUMNS.some((c) => c.key === f.key));
+  const seen = new Set();
+  return [...PROFIT_SCREENER_BASE_COLUMNS, ...extra].filter((c) => (seen.has(c.key) ? false : seen.add(c.key)));
+}
+
+function profitScreenerGridStyle(colCount) {
+  return `grid-template-columns: repeat(${colCount}, minmax(90px, 1fr)); min-width: ${Math.max(640, colCount * 100)}px;`;
+}
+
+function formatScanFieldValue(value, unit) {
+  if (value === null || value === undefined) return "—";
+  if (unit === "$") return fmtMoney(value);
+  if (unit === "%") return `${value.toFixed(2)}%`;
+  if (unit === "x") return `${value.toFixed(2)}x`;
+  return Math.abs(value) >= 1000 ? fmtCompact(value) : value.toFixed(2);
+}
+
 function profitScreenerHeadRow() {
-  const cells = PROFIT_SCREENER_COLUMNS.map((col) => {
+  const cols = currentProfitScreenerColumns();
+  const cells = cols.map((col) => {
     const isActive = profitScreenerSort.key === col.key;
     const arrow = isActive ? (profitScreenerSort.dir === "desc" ? "▼" : "▲") : "";
     return `<span><button type="button" class="sort-col" data-sort-key="${col.key}">${col.label}${arrow ? ` <span class="sort-arrow">${arrow}</span>` : ""}</button></span>`;
   }).join("");
-  return `<div class="list-row list-head profit-screener-table">${cells}</div>`;
+  return `<div class="list-row list-head profit-screener-table" style="${profitScreenerGridStyle(cols.length)}">${cells}</div>`;
 }
 
 function profitScreenerRow(stock) {
-  const up = stock.change_percent >= 0;
-  return `<div class="list-row profit-screener-table">
-    <span>${stock.symbol}</span>
-    <span>${fmtMoney(stock.price)}</span>
-    <span class="${up ? "trend-change up" : "trend-change down"}">${up ? "+" : ""}${stock.change_percent.toFixed(2)}%</span>
-    <span>${fmtCompact(stock.volume)}</span>
-    <span>${stock.avg_volume ? fmtCompact(stock.avg_volume) : "—"}</span>
-    <span>${stock.relative_volume !== null && stock.relative_volume !== undefined ? `${stock.relative_volume.toFixed(2)}x` : "—"}</span>
-    <span>${stock.atr !== null && stock.atr !== undefined ? fmtMoney(stock.atr) : "—"}</span>
-  </div>`;
+  const cols = currentProfitScreenerColumns();
+  const cells = cols
+    .map((col) => {
+      if (col.key === "symbol") return `<span>${stock.symbol}</span>`;
+      if (col.key === "change_percent") {
+        const up = stock.change_percent >= 0;
+        return `<span class="${up ? "trend-change up" : "trend-change down"}">${up ? "+" : ""}${stock.change_percent.toFixed(2)}%</span>`;
+      }
+      return `<span>${formatScanFieldValue(stock[col.key], col.unit)}</span>`;
+    })
+    .join("");
+  return `<div class="list-row profit-screener-table" style="${profitScreenerGridStyle(cols.length)}">${cells}</div>`;
 }
 
 function renderProfitScreenerRows() {
@@ -1192,6 +1221,108 @@ function renderProfitScreenerRows() {
   });
 }
 
+// --- "Add Scan Filters" picker: a field registry fetched from the server
+// (/api/public/scan-fields), searchable and grouped by category, click to
+// add/remove. Active filters are sent as a `filters` JSON param on Scan. ---
+
+let scanFieldsByCategory = null; // {category: [{key,label,unit}]} once loaded
+let scanFieldsByKey = {};
+let activeScanFilters = []; // [{field, min, max}]
+
+async function loadScanFieldsOnce() {
+  if (scanFieldsByCategory) return;
+  try {
+    const body = await getJSON("/public/scan-fields");
+    scanFieldsByCategory = body.categories;
+    scanFieldsByKey = {};
+    for (const fields of Object.values(scanFieldsByCategory)) {
+      for (const f of fields) scanFieldsByKey[f.key] = f;
+    }
+  } catch {
+    scanFieldsByCategory = {}; // picker just shows "no filters" rather than breaking the tab
+  }
+}
+
+function renderActiveScanFilters() {
+  const container = document.getElementById("activeScanFilters");
+  if (!activeScanFilters.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = activeScanFilters
+    .map((f, i) => {
+      const meta = scanFieldsByKey[f.field] || { label: f.field, unit: "" };
+      return `<div class="filter-chip" data-filter-index="${i}">
+        <span class="filter-chip-label">${meta.label}${meta.unit ? ` (${meta.unit})` : ""}</span>
+        <input type="number" step="any" placeholder="Min" class="filter-min" value="${f.min ?? ""}" />
+        <input type="number" step="any" placeholder="Max" class="filter-max" value="${f.max ?? ""}" />
+        <button type="button" class="filter-chip-remove" aria-label="Remove filter">&times;</button>
+      </div>`;
+    })
+    .join("");
+  container.querySelectorAll(".filter-chip").forEach((chip) => {
+    const i = Number(chip.dataset.filterIndex);
+    chip.querySelector(".filter-min").addEventListener("input", (e) => {
+      activeScanFilters[i].min = e.target.value === "" ? null : parseFloat(e.target.value);
+    });
+    chip.querySelector(".filter-max").addEventListener("input", (e) => {
+      activeScanFilters[i].max = e.target.value === "" ? null : parseFloat(e.target.value);
+    });
+    chip.querySelector(".filter-chip-remove").addEventListener("click", () => {
+      activeScanFilters.splice(i, 1);
+      renderActiveScanFilters();
+    });
+  });
+}
+
+function renderScanFilterModalBody() {
+  const query = document.getElementById("scanFilterSearch").value.trim().toLowerCase();
+  const body = document.getElementById("scanFilterBody");
+  const activeKeys = new Set(activeScanFilters.map((f) => f.field));
+  let html = "";
+  for (const [category, fields] of Object.entries(scanFieldsByCategory || {})) {
+    const matched = fields.filter((f) => f.label.toLowerCase().includes(query));
+    if (!matched.length) continue;
+    html += `<div class="scan-filter-category-label">${category}</div><div class="scan-filter-grid">`;
+    html += matched
+      .map(
+        (f) =>
+          `<button type="button" class="scan-filter-field-btn${activeKeys.has(f.key) ? " is-active" : ""}" data-field-key="${f.key}"><span class="field-icon">${activeKeys.has(f.key) ? "✓" : "+"}</span>${f.label}</button>`
+      )
+      .join("");
+    html += `</div>`;
+  }
+  body.innerHTML = html || `<div class="scan-filter-empty-note">No matching filters.</div>`;
+  body.querySelectorAll(".scan-filter-field-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.fieldKey;
+      const idx = activeScanFilters.findIndex((f) => f.field === key);
+      if (idx >= 0) activeScanFilters.splice(idx, 1);
+      else activeScanFilters.push({ field: key, min: null, max: null });
+      renderActiveScanFilters();
+      renderScanFilterModalBody();
+    });
+  });
+}
+
+async function openScanFilterModal() {
+  await loadScanFieldsOnce();
+  renderScanFilterModalBody();
+  document.getElementById("scanFilterModal").hidden = false;
+}
+function closeScanFilterModal() {
+  document.getElementById("scanFilterModal").hidden = true;
+}
+
+document.getElementById("addScanFilterBtn").addEventListener("click", openScanFilterModal);
+document.getElementById("scanFilterCloseBtn").addEventListener("click", closeScanFilterModal);
+document.getElementById("scanFilterModalBackdrop").addEventListener("click", closeScanFilterModal);
+document.getElementById("scanFilterSearch").addEventListener("input", renderScanFilterModalBody);
+document.addEventListener("keydown", (e) => {
+  const modal = document.getElementById("scanFilterModal");
+  if (e.key === "Escape" && !modal.hidden) closeScanFilterModal();
+});
+
 async function runProfitScreener() {
   const status = document.getElementById("profitScreenerStatus");
   const results = document.getElementById("profitScreenerResults");
@@ -1208,6 +1339,11 @@ async function runProfitScreener() {
   });
   const maxPrice = document.getElementById("pMaxPrice").value;
   if (maxPrice) params.set("max_price", maxPrice);
+
+  const activeFiltersPayload = activeScanFilters
+    .filter((f) => f.min !== null || f.max !== null)
+    .map((f) => ({ field: f.field, min: f.min, max: f.max }));
+  if (activeFiltersPayload.length) params.set("filters", JSON.stringify(activeFiltersPayload));
 
   btn.disabled = true;
   status.textContent = "Scanning…";

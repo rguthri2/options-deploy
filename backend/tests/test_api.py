@@ -1,3 +1,6 @@
+import json
+
+
 def test_unauthenticated_requests_are_rejected(fresh_db):
     from fastapi.testclient import TestClient
 
@@ -216,6 +219,58 @@ def test_public_profit_screener_honors_screen_stocks_criteria(client):
 def test_public_profit_screener_rejects_bad_direction(client):
     resp = client.get("/api/public/profit-screener", params={"direction": "sideways"})
     assert resp.status_code == 400
+
+
+def test_public_profit_screener_includes_fundamentals(client):
+    resp = client.get("/api/public/profit-screener")
+    assert resp.status_code == 200
+    for stock in resp.json()["stocks"]:
+        assert stock["pe_ratio"] is not None
+        assert stock["beta"] is not None
+        assert stock["dividend_yield_pct"] is not None
+
+
+def test_public_profit_screener_filters_narrow_results(client):
+    base = client.get("/api/public/profit-screener").json()["stocks"]
+    pe_values = sorted(s["pe_ratio"] for s in base)
+    cutoff = pe_values[len(pe_values) // 2]
+
+    filters = json.dumps([{"field": "pe_ratio", "max": cutoff}])
+    resp = client.get("/api/public/profit-screener", params={"filters": filters})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["filters"] == [{"field": "pe_ratio", "min": None, "max": cutoff}]
+    assert body["stocks"]
+    assert all(s["pe_ratio"] <= cutoff for s in body["stocks"])
+    assert len(body["stocks"]) < len(base)
+
+
+def test_public_profit_screener_rejects_unknown_filter_field(client):
+    resp = client.get("/api/public/profit-screener", params={"filters": json.dumps([{"field": "not_a_field"}])})
+    assert resp.status_code == 400
+
+
+def test_public_profit_screener_rejects_malformed_filters_json(client):
+    resp = client.get("/api/public/profit-screener", params={"filters": "not json"})
+    assert resp.status_code == 400
+
+
+def test_public_profit_screener_rejects_filter_min_greater_than_max(client):
+    filters = json.dumps([{"field": "pe_ratio", "min": 50, "max": 10}])
+    resp = client.get("/api/public/profit-screener", params={"filters": filters})
+    assert resp.status_code == 400
+
+
+def test_public_scan_fields_lists_categories(client):
+    resp = client.get("/api/public/scan-fields")
+    assert resp.status_code == 200
+    categories = resp.json()["categories"]
+    assert "Price & Volume" in categories
+    assert "Fundamentals" in categories
+    price_keys = {f["key"] for f in categories["Price & Volume"]}
+    assert {"price", "volume", "relative_volume", "atr"} <= price_keys
+    fundamentals_keys = {f["key"] for f in categories["Fundamentals"]}
+    assert {"pe_ratio", "eps", "dividend_yield_pct"} <= fundamentals_keys
 
 
 def test_public_level2_is_labeled_simulated(client):

@@ -146,11 +146,31 @@ class YFinanceProvider(MarketDataProvider):
 
         name = symbol.upper()
         market_cap = None
+        beta = None
+        pe_ratio = None
+        eps = None
+        dividend_yield_pct = None
+        price_to_book = None
+        return_on_equity_pct = None
+        profit_margin_pct = None
         try:
             info = ticker.info
             name = info.get("shortName") or info.get("longName") or name
             market_cap = info.get("marketCap")
-        except Exception:  # noqa: BLE001 - name/market cap are nice-to-haves
+            raw_beta = _safe_float(info.get("beta"), None)
+            beta = round(raw_beta, 2) if raw_beta is not None else None
+            raw_pe = _safe_float(info.get("trailingPE"), None)
+            pe_ratio = round(raw_pe, 2) if raw_pe is not None else None
+            raw_eps = _safe_float(info.get("trailingEps"), None)
+            eps = round(raw_eps, 2) if raw_eps is not None else None
+            dividend_yield_pct = round(_extract_dividend_yield(info, price) * 100.0, 2)
+            raw_ptb = _safe_float(info.get("priceToBook"), None)
+            price_to_book = round(raw_ptb, 2) if raw_ptb is not None else None
+            roe = _safe_float(info.get("returnOnEquity"), None)
+            return_on_equity_pct = round(roe * 100.0, 2) if roe is not None else None
+            margin = _safe_float(info.get("profitMargins"), None)
+            profit_margin_pct = round(margin * 100.0, 2) if margin is not None else None
+        except Exception:  # noqa: BLE001 - every field below is a nice-to-have
             pass
 
         change = price - previous_close
@@ -162,10 +182,20 @@ class YFinanceProvider(MarketDataProvider):
             "previous_close": round(previous_close, 2),
             "change": round(change, 2),
             "change_percent": round(change_percent, 2),
+            "open": round(_safe_float(fast_info.get("open"), price), 2),
             "day_high": round(_safe_float(fast_info.get("dayHigh"), price), 2),
             "day_low": round(_safe_float(fast_info.get("dayLow"), price), 2),
+            "year_high": round(_safe_float(fast_info.get("yearHigh"), price), 2),
+            "year_low": round(_safe_float(fast_info.get("yearLow"), price), 2),
             "volume": _safe_int(fast_info.get("lastVolume")),
             "market_cap": market_cap,
+            "beta": beta,
+            "pe_ratio": pe_ratio,
+            "eps": eps,
+            "dividend_yield_pct": dividend_yield_pct,
+            "price_to_book": price_to_book,
+            "return_on_equity_pct": return_on_equity_pct,
+            "profit_margin_pct": profit_margin_pct,
         }
 
     def get_history(self, symbol: str, range_key: str) -> list[dict]:

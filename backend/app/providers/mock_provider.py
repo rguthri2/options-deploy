@@ -159,10 +159,12 @@ class MockProvider(MarketDataProvider):
 
     def get_quote_detail(self, symbol: str) -> dict:
         underlying = self.get_underlying(symbol)
+        _, dividend_yield, _ = _TICKER_PROFILES[underlying.symbol]
         rng = random.Random(symbol.upper())
         previous_close = round(underlying.price * (1 + rng.uniform(-0.02, 0.02)), 2)
         change = round(underlying.price - previous_close, 2)
         change_percent = round((change / previous_close * 100.0) if previous_close else 0.0, 2)
+        pe_ratio = round(rng.uniform(12.0, 45.0), 2)
         return {
             "symbol": underlying.symbol,
             "name": _COMPANY_NAMES.get(underlying.symbol, underlying.symbol),
@@ -170,10 +172,20 @@ class MockProvider(MarketDataProvider):
             "previous_close": previous_close,
             "change": change,
             "change_percent": change_percent,
+            "open": round(underlying.price * (1 + rng.uniform(-0.005, 0.005)), 2),
             "day_high": round(underlying.price * 1.01, 2),
             "day_low": round(underlying.price * 0.99, 2),
+            "year_high": round(underlying.price * rng.uniform(1.15, 1.45), 2),
+            "year_low": round(underlying.price * rng.uniform(0.55, 0.85), 2),
             "volume": rng.randint(2_000_000, 60_000_000),
             "market_cap": _MARKET_CAPS.get(underlying.symbol),
+            "beta": round(rng.uniform(0.7, 1.9), 2),
+            "pe_ratio": pe_ratio,
+            "eps": round(underlying.price / pe_ratio, 2),
+            "dividend_yield_pct": round(dividend_yield * 100.0, 2),
+            "price_to_book": round(rng.uniform(2.0, 18.0), 2),
+            "return_on_equity_pct": round(rng.uniform(8.0, 40.0), 2),
+            "profit_margin_pct": round(rng.uniform(4.0, 32.0), 2),
         }
 
     def screen_stocks(self, criteria: StockScreenCriteria) -> list[dict]:

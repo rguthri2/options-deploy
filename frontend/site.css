@@ -299,6 +299,134 @@ a { color: inherit; }
 .profit-screener-table.list-head button.sort-col:hover { color: var(--text-primary); }
 .profit-screener-table.list-head .sort-arrow { font-size: 0.65rem; opacity: 0.6; }
 
+/* --- Scan filters: a Think-or-Swim-style "Add Scan Filters" picker -- an
+   active-filter chip list plus a modal of available fields grouped by
+   category, searchable, click-to-add. --- */
+.btn-secondary {
+  background: transparent;
+  color: var(--brand);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.btn-secondary:hover { background: color-mix(in srgb, var(--brand) 10%, transparent); }
+
+.active-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.filter-chip {
+  display: grid;
+  grid-template-columns: 1fr 100px 100px 32px;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+.filter-chip .filter-chip-label { font-weight: 600; }
+.filter-chip input {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.filter-chip .filter-chip-remove {
+  all: unset;
+  cursor: pointer;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+.filter-chip .filter-chip-remove:hover { color: var(--diverge-down); }
+
+.scan-filter-modal[hidden] { display: none; }
+.scan-filter-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.scan-filter-modal-backdrop { position: absolute; inset: 0; background: rgba(11, 14, 23, 0.55); }
+.scan-filter-card {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  max-height: min(80vh, 640px);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scan-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.scan-filter-head h3 { margin: 0; font-size: 1.1rem; }
+.scan-filter-close { all: unset; cursor: pointer; font-size: 1.3rem; color: var(--text-muted); padding: 0.25rem; }
+.scan-filter-close:hover { color: var(--text-primary); }
+.scan-filter-search-wrap { padding: 1rem 1.25rem 0; }
+.scan-filter-search-wrap input {
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.scan-filter-body { overflow-y: auto; padding: 1rem 1.25rem 1.25rem; }
+.scan-filter-category-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 1.25rem 0 0.6rem;
+}
+.scan-filter-category-label:first-child { margin-top: 0; }
+.scan-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.5rem;
+}
+.scan-filter-field-btn {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.scan-filter-field-btn:hover { border-color: var(--brand); }
+.scan-filter-field-btn.is-active { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, var(--surface-2)); }
+.scan-filter-field-btn .field-icon { font-size: 1rem; line-height: 1; }
+.scan-filter-empty-note { font-size: 0.85rem; color: var(--text-secondary); padding: 0.5rem 0 1rem; }
+
 .section-row {
   display: flex;
   align-items: baseline;

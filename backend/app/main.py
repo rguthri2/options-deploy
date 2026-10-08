@@ -12,8 +12,11 @@ Endpoints:
   GET  /api/public/history?symbol=&range=   (public)
   GET  /api/public/news?symbols=AAPL,MSFT   (public)
   GET  /api/public/screen-stocks?...        (public; criteria-based stock screener)
-  GET  /api/public/profit-screener?...      (public; "RG Profit Options Screener" -- adds
-                                              ADV/relative volume/ATR, ranked by relative volume)
+  GET  /api/public/scan-fields               (public; the "RG Profit Options Screener" field picker's registry)
+  GET  /api/public/profit-screener?...&filters=[{"field":,"min":,"max":}]
+                                              (public; "RG Profit Options Screener" -- adds
+                                              ADV/relative volume/ATR/fundamentals, ranked by
+                                              relative volume, narrowed by any `filters`)
   GET  /api/public/level2?symbol=AAPL       (public; clearly-labeled simulated data)
   GET  /api/broker/status                   (auth required)
   POST /api/broker/mode                     (auth required; in-app paper/live toggle)
@@ -33,6 +36,7 @@ the request body -- see app/trading/__init__.get_broker() and README.md.
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import time
 from datetime import date
@@ -59,6 +63,7 @@ from .serializers import (
     position_to_dict,
     underlying_to_dict,
 )
+from .scan_fields import SCAN_FIELDS, SCAN_FIELDS_BY_KEY, ScanFilter, apply_filters
 from .strategies import all_strategies, get_strategy
 from .technicals import average_true_range, average_volume
 from .trading import BrokerError, OrderRequest, effective_mode, get_broker
@@ -355,6 +360,18 @@ def public_screen_stocks(
     }
 
 
+@app.get("/api/public/scan-fields")
+def public_scan_fields() -> dict:
+    """The RG Profit Options Screener's "Add Scan Filters" picker, grouped
+    by category -- a curated subset of Think-or-Swim's own field list (see
+    scan_fields.py's module docstring for which ToS fields are left out and
+    why: no free data source carries them)."""
+    categories: dict[str, list[dict]] = {}
+    for f in SCAN_FIELDS:
+        categories.setdefault(f.category, []).append({"key": f.key, "label": f.label, "unit": f.unit})
+    return {"categories": categories}
+
+
 @app.get("/api/public/profit-screener")
 def rg_profit_options_screener(
     min_price: float = Query(0.0, ge=0),
@@ -364,14 +381,26 @@ def rg_profit_options_screener(
     direction: str = Query("either", description="gainers | losers | either"),
     min_market_cap: float = Query(0.0, ge=0),
     limit: int = Query(25, ge=1, le=50),
+    filters: Optional[str] = Query(
+        None, description='JSON array, e.g. [{"field":"pe_ratio","min":0,"max":20}] -- see /api/public/scan-fields'
+    ),
 ) -> dict:
-    """RG Profit Options Screener: a Think-or-Swim-style volume/volatility
-    scan -- the same price/volume/%-change/market-cap criteria as
-    /api/public/screen-stocks, with each match enriched with Average Daily
-    Volume, Relative Volume, and Average True Range from daily history, and
-    ranked by relative volume (highest first) rather than |% change|.
+    """RG Profit Options Screener: a Think-or-Swim-style "Add Scan Filters"
+    scan. The min_price/max_price/min_volume/min_change_pct/direction/
+    min_market_cap params pick the base universe (same as
+    /api/public/screen-stocks); `filters` then narrows that universe by any
+    number of additional fields (see /api/public/scan-fields for the list)
+    with a min and/or max each. Every match is enriched with Average Daily
+    Volume, Relative Volume, Average True Range, and a handful of
+    fundamentals, then ranked by relative volume (highest first).
 
-    Two scope notes, since both are judgment calls rather than guesses:
+    Three scope notes, since all are judgment calls rather than guesses:
+      - `filters` apply AFTER the base universe query, which is itself
+        capped at `limit` (default 25, max 50) -- this narrows the top N
+        movers/volume leaders the base query already found, not the full
+        market. A tight fundamental filter (e.g. Beta > 2) can legitimately
+        return nothing if none of those top N happen to qualify, even if
+        qualifying stocks exist elsewhere in the market.
       - Average Daily Volume/ATR use a 20/14-day lookback (common defaults,
         not vendor-specified); a symbol with less history than that omits
         the fields it can't support rather than computing a misleadingly
@@ -387,6 +416,27 @@ def rg_profit_options_screener(
         raise HTTPException(status_code=400, detail=f"direction must be one of {sorted(_VALID_DIRECTIONS)}")
     if max_price is not None and max_price < min_price:
         raise HTTPException(status_code=400, detail="max_price must be >= min_price")
+
+    scan_filters: list[ScanFilter] = []
+    if filters:
+        try:
+            raw_filters = json.loads(filters)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"filters must be valid JSON: {exc}") from exc
+        if not isinstance(raw_filters, list):
+            raise HTTPException(status_code=400, detail="filters must be a JSON array")
+        for raw in raw_filters:
+            if not isinstance(raw, dict) or "field" not in raw:
+                raise HTTPException(status_code=400, detail=f"Invalid filter entry: {raw!r}")
+            if raw["field"] not in SCAN_FIELDS_BY_KEY:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown filter field '{raw['field']}'. See /api/public/scan-fields.",
+                )
+            f_min, f_max = raw.get("min"), raw.get("max")
+            if f_min is not None and f_max is not None and f_min > f_max:
+                raise HTTPException(status_code=400, detail=f"filter '{raw['field']}': min must be <= max")
+            scan_filters.append(ScanFilter(field=raw["field"], min=f_min, max=f_max))
 
     criteria = StockScreenCriteria(
         min_price=min_price,
@@ -405,6 +455,11 @@ def rg_profit_options_screener(
 
     rows = []
     for stock in stocks:
+        enriched = dict(stock)
+        try:
+            enriched.update(provider.get_quote_detail(stock["symbol"]))
+        except ProviderError:
+            pass  # fundamentals are a nice-to-have here -- the base quote still stands
         avg_volume = None
         atr = None
         try:
@@ -412,11 +467,13 @@ def rg_profit_options_screener(
             avg_volume = average_volume(bars)
             atr = average_true_range(bars)
         except ProviderError:
-            pass  # history is a nice-to-have here -- the base quote still stands
-        volume = stock.get("volume") or 0
+            pass
+        volume = enriched.get("volume") or 0
         relative_volume = round(volume / avg_volume, 2) if avg_volume else None
-        rows.append({**stock, "avg_volume": avg_volume, "relative_volume": relative_volume, "atr": atr})
+        enriched.update(avg_volume=avg_volume, relative_volume=relative_volume, atr=atr)
+        rows.append(enriched)
 
+    rows = apply_filters(rows, scan_filters)
     rows.sort(key=lambda r: r.get("relative_volume") or 0, reverse=True)
     return {
         "criteria": {
@@ -428,6 +485,7 @@ def rg_profit_options_screener(
             "min_market_cap": min_market_cap,
             "limit": limit,
         },
+        "filters": [{"field": f.field, "min": f.min, "max": f.max} for f in scan_filters],
         "stocks": rows,
     }
 

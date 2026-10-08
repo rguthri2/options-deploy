@@ -22,12 +22,28 @@ shows a plain-language note instead of a blank panel.
 
 **RG Profit Options Screener** (Scanner → RG Screener tab): a
 Think-or-Swim-style volume/volatility scan — Last, % change, Volume, Average
-Daily Volume, Relative Volume, and ATR, ranked by relative volume with
-clickable column headers to re-sort. Backed by `/api/public/profit-screener`
-(`backend/app/technicals.py` computes ATR and average volume from daily
-history). Relative volume here is a daily reading (today's full volume vs.
-the 20-day average), not time-of-day-adjusted the way a real-time ToS scan
-is — that needs an intraday volume profile the app's providers don't expose.
+Daily Volume, Relative Volume, and ATR by default, ranked by relative volume
+with clickable column headers to re-sort. Backed by
+`/api/public/profit-screener` (`backend/app/technicals.py` computes ATR and
+average volume from daily history). Relative volume here is a daily reading
+(today's full volume vs. the 20-day average), not time-of-day-adjusted the
+way a real-time ToS scan is — that needs an intraday volume profile the
+app's providers don't expose.
+
+An **"Add Scan Filters" picker** (`backend/app/scan_fields.py`,
+`/api/public/scan-fields`) lets you stack any number of additional filters —
+Open/High/Low/Close, 52-week high/low, Beta, Market Cap, P/E, EPS, Dividend
+Yield, Price/Book, ROE, Net Profit Margin — each with its own min and/or
+max; adding a filter also adds its column to the results table. This is a
+curated *subset* of Think-or-Swim's own filter list, not a full replica:
+about half of ToS's fields (Bid/Ask/Bid Size/Ask Size/Last Size/Mark, and
+every options-tape/volatility-surface field — Back/Front/Weighted Back
+Volatility, Volatility Index/Difference, Market Maker Move, Call/Put Volume
+Index, Put/Call Ratio) need a live Level 1/2 quote feed or an aggregated
+options tape that no free data source exposes, so they're left out rather
+than faked. Filters apply **after** the base universe query (itself capped
+at `limit`, default 25, max 50) — narrowing the top N movers/volume leaders
+already found, not the full market.
 
 **Nothing here is financial advice**, and quotes/greeks/payoff figures are
 estimates — verify everything with your broker before acting on it. The app
@@ -261,7 +277,8 @@ supports single-leg equity orders (no options orders, no multi-leg spreads
 - `GET /api/public/history?symbol=AAPL&range=1D|5D|1W|1M|1Y` — OHLCV bars (open/high/low/close/volume) for charting; public
 - `GET /api/public/news?symbols=AAPL,MSFT` — recent headlines; public
 - `GET /api/public/screen-stocks?min_price=&max_price=&min_volume=&min_change_pct=&direction=either|gainers|losers&min_market_cap=&limit=` — criteria-based stock screener (all params optional); public
-- `GET /api/public/profit-screener?...` — **RG Profit Options Screener**: same params as `/api/public/screen-stocks` above, each match enriched with `avg_volume` (20-day), `relative_volume` (today's volume / that average), and `atr` (14-day, Wilder's method), ranked by relative volume; public
+- `GET /api/public/profit-screener?...&filters=[{"field":,"min":,"max":}]` — **RG Profit Options Screener**: same base params as `/api/public/screen-stocks` above, each match enriched with `avg_volume` (20-day), `relative_volume` (today's volume / that average), `atr` (14-day, Wilder's method), and a handful of fundamentals, ranked by relative volume; an optional `filters` JSON array narrows further by any field from `/api/public/scan-fields` (each with its own min and/or max); public
+- `GET /api/public/scan-fields` — the RG Profit Options Screener's "Add Scan Filters" field registry, grouped by category; public
 - `GET /api/public/level2?symbol=AAPL` — **simulated** order-book depth (always carries `simulated: true` and a disclaimer — no free/available data source provides real Level 2 depth); public
 - `GET /api/broker/status` — which broker is active and whether live trading is enabled; auth required
 - `POST /api/broker/mode` — in-app Paper/Live toggle (`{"mode": "paper"|"etrade"}`), for flipping back and forth while testing strategies without editing env vars and restarting; only does anything once `LIVE_TRADING_ENABLED=true` is already set on the server — that env var remains the one gate the UI can never override; auth required
